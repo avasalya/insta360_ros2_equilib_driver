@@ -4,6 +4,10 @@
   <arg name="perspective" default="false"/>
   <arg name="equilib_config" default="$(find-pkg-share insta360_ros2_equilib_driver)/config/equilib.yaml"/>
 
+  <let name="view_topic" value="/dual_fisheye/image"/>
+  <let if="$(var equirectangular)" name="view_topic" value="/equirectangular/image"/>
+  <let if="$(var perspective)" name="view_topic" value="/perspective/image"/>
+
   <node pkg="insta360_ros2_equilib_driver" exec="insta360_camera"
         name="insta360_camera" output="screen">
     <param name="video_resolution" value="RES_1152_1152P30"/>
@@ -24,6 +28,10 @@
     <param from="$(var equilib_config)"/>
     <param name="publish_equirectangular" value="$(var equirectangular)"/>
     <param name="publish_perspective" value="$(var perspective)"/>
+  </node>
+
+  <node pkg="image_view" exec="image_view" name="live_viewer" output="screen">
+    <remap from="image" to="$(var view_topic)"/>
   </node>
 
 </launch>
