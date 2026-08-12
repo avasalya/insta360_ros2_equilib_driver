@@ -1,0 +1,29 @@
+equilib_stitcher:
+  ros__parameters:
+    # Dual-fisheye calibration. These values match equirectangular.yaml.
+    cx_offset: 0.0
+    cy_offset: 0.0
+    crop_size: 1152
+    translation: [0.0, 0.0, 0.0]
+    rotation_deg: [0.0, 0.0, 0.0]
+
+    # GPU processing. Set false to run the same pipeline on CPU.
+    gpu: true
+
+    # Equirectangular panorama output.
+    out_width: 2304
+    out_height: 1152
+    equi_roll_deg: 0.0
+    equi_pitch_deg: 0.0
+    equi_yaw_deg: 0.0
+    fisheye_fov_deg: 195.0
+    publish_equirectangular: true
+
+    # Perspective output generated from the panorama with EquiLib Equi2Pers.
+    publish_perspective: false
+    perspective_width: 1280
+    perspective_height: 720
+    perspective_fov_x: 100.0
+    perspective_roll_deg: 0.0
+    perspective_pitch_deg: 0.0
+    perspective_yaw_deg: 0.0

@@ -1,0 +1,4 @@
+# These are supplied by the existing workspace's Pixi jazzy360 environment.
+numpy
+torch
+pyequilib>=0.6.0

@@ -1,0 +1,34 @@
+<?xml version="1.0"?>
+<launch>
+  <arg name="equirectangular" default="true"/>
+  <arg name="perspective" default="false"/>
+  <arg name="equilib_config" default="$(find-pkg-share insta360_ros2_equilib_driver)/config/equilib.yaml"/>
+
+  <node pkg="insta360_ros2_equilib_driver" exec="insta360_camera"
+        name="insta360_camera" output="screen">
+    <param name="video_resolution" value="RES_1152_1152P30"/>
+    <param name="lrv_video_resolution" value="RES_1440_720P30"/>
+  </node>
+
+  <node pkg="insta360_ros2_equilib_driver" exec="decoder"
+        name="image_decoder" output="log">
+    <param name="compressed_topic" value="/dual_fisheye/image/compressed"/>
+    <param name="uncompressed_topic" value="/dual_fisheye/image"/>
+    <param name="skip_frame" value="0"/>
+    <param name="i_frame_only" value="false"/>
+    <param name="decoder_name" value="h264_cuvid"/>
+  </node>
+
+  <node pkg="insta360_ros2_equilib_driver" exec="equilib_stitcher.py"
+        name="equilib_stitcher" output="screen">
+    <param from="$(var equilib_config)"/>
+    <param name="publish_equirectangular" value="$(var equirectangular)"/>
+    <param name="publish_perspective" value="$(var perspective)"/>
+  </node>
+
+    <!-- Automatically open a GUI window to visualize the selected video stream -->
+    <node pkg="image_view" exec="image_view" name="live_viewer" output="screen">
+        <remap from="image" to="$(var view_topic)"/>
+    </node>
+
+</launch>
