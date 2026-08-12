@@ -11,6 +11,10 @@
   <let if="$(var equirectangular)" name="view_topic" value="/equirectangular/image"/>
   <let if="$(var perspective)" name="view_topic" value="/perspective/image"/>
 
+  <let name="stitcher_enabled" value="false"/>
+  <let if="$(var equirectangular)" name="stitcher_enabled" value="true"/>
+  <let if="$(var perspective)" name="stitcher_enabled" value="true"/>
+
   <node pkg="insta360_ros2_equilib_driver" exec="insta360_ros2_equilib_driver"
         name="insta360_ros2_equilib_driver" output="screen">
     <param name="video_resolution" value="RES_1152_1152P30"/>
@@ -27,7 +31,8 @@
   </node>
 
   <node pkg="insta360_ros2_equilib_driver" exec="equilib_stitcher.py"
-        name="equilib_stitcher" output="screen">
+        name="equilib_stitcher" output="screen"
+        if="$(var stitcher_enabled)">
     <param from="$(var equilib_config)"/>
     <param name="publish_equirectangular" value="$(var equirectangular)"/>
     <param name="publish_perspective" value="$(var perspective)"/>
