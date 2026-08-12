@@ -26,9 +26,4 @@
     <param name="publish_perspective" value="$(var perspective)"/>
   </node>
 
-    <!-- Automatically open a GUI window to visualize the selected video stream -->
-    <node pkg="image_view" exec="image_view" name="live_viewer" output="screen">
-        <remap from="image" to="$(var view_topic)"/>
-    </node>
-
 </launch>

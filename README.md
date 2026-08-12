@@ -108,8 +108,7 @@ already configured Pixi environment:
 
 ```bash
 pixi run -e jazzy360 colcon build --base-paths insta360_ros2_equilib_driver --symlink-install
-pixi run -e jazzy360 ros2 launch insta360_ros2_equilib_driver bringup.launch.xml \
-  equirectangular:=true perspective:=false
+pixi run -e jazzy360 ros2 launch insta360_ros2_equilib_driver bringup.launch.xml equirectangular:=true perspective:=false
 ```
 
 The Pixi environment must provide ROS 2 Jazzy, FFmpeg with CUDA decoding,
