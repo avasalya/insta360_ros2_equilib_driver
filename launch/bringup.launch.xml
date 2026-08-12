@@ -34,7 +34,7 @@
   </node>
 
   <node pkg="image_view" exec="image_view" name="live_viewer" output="screen">
-    <param name="image" value="$(var view_topic)"/>
+    <remap from="image" to="$(var view_topic)"/>
   </node>
 
 </launch>
