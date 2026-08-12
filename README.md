@@ -130,6 +130,15 @@ OpenCV, `cv_bridge`, NumPy, PyTorch, and PyEquiLib. The existing workspace's
 `pixi.toml` already provides these dependencies.
 
 
+## fisheye
+![fisheye](doc/fisheye.png)
+
+## equirectangular
+![equirectangular](doc/equirectangular.png)
+
+## perspective
+![perspective](doc/perspective.png)
+
 # original sources
 
 Thanks to the authors of original sources.
