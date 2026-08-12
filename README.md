@@ -9,7 +9,7 @@ separate Python environment. see **[parent repository](https://github.com/avasal
 
 # Insta360 ROS2 Jazzy Driver with Pixi Environment
 
-A ROS driver for the Insta360 cameras. This driver is tested on Ubuntu 24.04 with ROS2 Jazzy on old classic RTX1080Ti. The driver has also been verified on the Insta360 X2 and X3 cameras. The following resolutions are available, all at 30 FPS.
+A ROS driver for the Insta360 cameras. This driver is tested on Ubuntu 24.04 with ROS2 Jazzy on old classic RTX2080Ti. The driver has also been verified on the Insta360 X3 cameras. The following resolutions are available, all at 30 FPS.
 - 3840 x 1920
 - 2560 x 1280
 - 2304 x 1152
@@ -21,6 +21,11 @@ you can update `video_resolution` in parameter config file.
 ```bash
  src/insta360_ros2_equilib_driver/launch/bringup.launch.xml
  ```
+
+ ```xml
+    <param name="video_resolution" value="RES_1152_1152P30"/>
+    <param name="lrv_video_resolution" value="RES_1440_720P30"/>
+```
 
 # Installation
 
@@ -75,21 +80,21 @@ sudo chmod 777 /dev/insta
 ```
 
 # Usage
-The camera provides images natively in `H.264` or `H.264_cuvid` compressed image format. We have a decoder node that
+The camera provides images natively in `H.264_cuvid` (default:GPU) or `H.264` (CPU) compressed image format. We have a decoder node that
 
 ## CUDA EquiLib projections
 
-Set `equilib:=true` to use the PyTorch/CUDA dual-fisheye stitcher. It subscribes to
+Set `equirectangular:=true` to use the PyTorch/CUDA dual-fisheye stitcher. It subscribes to
 `/dual_fisheye/image`, applies the calibration in `config/equilib.yaml`, publishes
 `/equirectangular/image`, and optionally generates `/perspective/image` with
 [EquiLib](https://github.com/haruishi43/equilib).
 
 ```bash
 pixi run -e jazzy360 ros2 launch insta360_ros2_equilib_driver bringup.launch.xml \
-  equilib:=true equirectangular:=true perspective:=true
+  equirectangular:=true perspective:=true
 ```
 
-### Switch GPU to CPU
+## Switch GPU to CPU
 
 To switch from GPU to CPU:
 
@@ -130,16 +135,16 @@ OpenCV, `cv_bridge`, NumPy, PyTorch, and PyEquiLib. The existing workspace's
 `pixi.toml` already provides these dependencies.
 
 
-## fisheye
+## Fisheye
 ![fisheye](doc/fisheye.png)
 
-## equirectangular
+## Equirectangular
 ![equirectangular](doc/equirectangular.png)
 
-## perspective
+## Perspective
 ![perspective](doc/perspective.png)
 
-# original sources
+# Original sources
 
 Thanks to the authors of original sources.
 [insta360_ros_driver](https://github.com/ai4ce/insta360_ros_driver)
