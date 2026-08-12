@@ -61,7 +61,7 @@ Additionally, **ensure the camera's USB mode is set to Android**:
 The Insta360 requires sudo privilege to be accessed via USB. To compensate for this, a udev configuration can be automatically created that will only request for sudo once. The camera can thus be setup initially via:
 
 ```bash
-cd ~/pixi_insta360_ros2_jazzy_driver/src/insta360_ros_driver
+cd ~/pixi_insta360_ros2_jazzy_driver/src/insta360_ros2_equilib_driver
 ./setup.sh
 ```
 This creates a symlink  based on the vendor ID of Insta360 cameras. The symlink, in this case <code>/dev/insta</code> is used to grant permissions to the usb port used by the camera.

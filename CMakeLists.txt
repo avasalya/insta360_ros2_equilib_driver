@@ -34,12 +34,12 @@ include_directories(
 )
 link_directories(${PROJECT_SOURCE_DIR}/lib)
 
-add_executable(insta360_camera src/main.cpp)
-target_link_libraries(insta360_camera
+add_executable(${PROJECT_NAME} src/main.cpp)
+target_link_libraries(${PROJECT_NAME}
   CameraSDK ${OpenCV_LIBRARIES} ${AVCODEC_LIBRARIES} ${AVFORMAT_LIBRARIES}
   ${AVUTIL_LIBRARIES} ${SWSCALE_LIBRARIES}
 )
-ament_target_dependencies(insta360_camera
+ament_target_dependencies(${PROJECT_NAME}
   rclcpp camera_info_manager cv_bridge image_transport sensor_msgs std_msgs std_srvs OpenCV
 )
 
@@ -52,8 +52,13 @@ ament_target_dependencies(decoder
   rclcpp camera_info_manager cv_bridge image_transport sensor_msgs std_msgs std_srvs OpenCV
 )
 
-install(TARGETS insta360_camera decoder DESTINATION lib/${PROJECT_NAME})
+install(TARGETS ${PROJECT_NAME} decoder DESTINATION lib/${PROJECT_NAME})
+
+# Python modules
+ament_python_install_package(${PROJECT_NAME})
 install(PROGRAMS scripts/equilib_stitcher.py DESTINATION lib/${PROJECT_NAME})
+
 install(DIRECTORY config launch lib DESTINATION share/${PROJECT_NAME})
+
 
 ament_package()

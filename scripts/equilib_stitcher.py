@@ -25,9 +25,7 @@ class EquiLibStitcher(Node):
         super().__init__("equilib_stitcher")
         self._declare_parameters()
         self.bridge = CvBridge()
-        self.device = torch.device(
-            "cuda" if self.get_parameter("gpu").value and torch.cuda.is_available() else "cpu"
-        )
+        self.device = self._select_device()
         self.stitch_grid: torch.Tensor | None = None
         self.input_shape: tuple[int, int] | None = None
         self.maps_dirty = True
@@ -50,6 +48,26 @@ class EquiLibStitcher(Node):
             f"EquiLib stitcher using {self.device.type.upper()} "
             f"(CUDA available: {torch.cuda.is_available()})"
         )
+
+    def _select_device(self) -> torch.device:
+        """Use CUDA only when this PyTorch build supports the installed GPU."""
+        if not self.get_parameter("gpu").value:
+            return torch.device("cpu")
+        if not torch.cuda.is_available():
+            self.get_logger().warning("CUDA requested but unavailable; using CPU")
+            return torch.device("cpu")
+
+        capability = torch.cuda.get_device_capability()
+        architecture = f"sm_{capability[0]}{capability[1]}"
+        supported_architectures = set(torch.cuda.get_arch_list())
+        if architecture not in supported_architectures:
+            supported = ", ".join(sorted(supported_architectures)) or "none"
+            self.get_logger().warning(
+                f"CUDA device capability {architecture} is not supported by this PyTorch build "
+                f"({supported}); using CPU"
+            )
+            return torch.device("cpu")
+        return torch.device("cuda")
 
     def _declare_parameters(self) -> None:
         defaults: dict[str, Any] = {
@@ -176,7 +194,7 @@ class EquiLibStitcher(Node):
         self.input_shape = (source_height, source_width)
         self.maps_dirty = False
         self.get_logger().info(
-            f"Built CUDA stitch map: {source_width}x{source_height} -> "
+            f"Built {self.device.type.upper()} stitch map: {source_width}x{source_height} -> "
             f"{output_width}x{output_height}"
         )
 
