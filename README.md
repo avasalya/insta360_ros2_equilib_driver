@@ -1,6 +1,6 @@
 # Insta360 ROS 2 EquiLib Driver
 
-A minimal ROS 2 driver for an Insta360 camera. It contains only camera capture,
+A minimal ROS 2 driver for an Insta360 camera. It contains real-time camera capture using 360, equirectangular and perspective views,
 H.264 decoding, and the CUDA/CPU PyTorch + PyEquiLib stitcher.
 
 It uses the existing workspace's `jazzy360` Pixi environment; do not create a
@@ -89,9 +89,23 @@ pixi run -e jazzy360 ros2 launch insta360_ros2_equilib_driver bringup.launch.xml
   equilib:=true equirectangular:=true perspective:=true
 ```
 
-Set `gpu: false` in `config/equilib.yaml` to use the CPU path. The `equilib` launch
-mode replaces the legacy C++ equirectangular and perspective nodes, so only one
-projection pipeline runs at a time.
+### Switch GPU to CPU
+
+To switch from GPU to CPU:
+
+1. In `src/insta360_ros2_equilib_driver/launch/bringup.launch.xml`, change:
+
+```xml
+<param name="decoder_name" value="h264_cuvid"/>
+```
+
+```xml
+<param name="decoder_name" value="h264"/>
+```
+
+and
+Set `gpu: false` in `config/equilib.yaml` to use the CPU path.
+Adjust the same file for the fisheye calibration and output dimensions.
 
 
 ## Included pipeline
@@ -115,5 +129,9 @@ The Pixi environment must provide ROS 2 Jazzy, FFmpeg with CUDA decoding,
 OpenCV, `cv_bridge`, NumPy, PyTorch, and PyEquiLib. The existing workspace's
 `pixi.toml` already provides these dependencies.
 
-Set `gpu: false` in `config/equilib.yaml` to run the stitcher on CPU. Adjust the
-same file for the fisheye calibration and output dimensions.
+
+# original sources
+
+Thanks to the authors of original sources.
+[insta360_ros_driver](https://github.com/ai4ce/insta360_ros_driver)
+[Equilib](https://github.com/haruishi43/equilib)

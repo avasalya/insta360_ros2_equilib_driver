@@ -61,38 +61,63 @@ private:
     std::string decoder_name_;
 
     void InitFFmpegDecoder() {
-        hw_type_ = AV_HWDEVICE_TYPE_CUDA;
+        // Only use CUDA for an explicitly requested hardware decoder.
+        const bool use_cuda = (decoder_name_ == "h264_cuvid");
+
+        hw_type_ = use_cuda ? AV_HWDEVICE_TYPE_CUDA : AV_HWDEVICE_TYPE_NONE;
 
         codec_ = avcodec_find_decoder_by_name(decoder_name_.c_str());
+
         if (!codec_) {
-            RCLCPP_WARN(this->get_logger(), "Decoder '%s' not found in FFmpeg library registry. Falling back to software.", decoder_name_.c_str());
+            RCLCPP_WARN(
+                this->get_logger(),
+                "Decoder '%s' not found. Falling back to software H.264 decoder.",
+                decoder_name_.c_str());
+
             hw_type_ = AV_HWDEVICE_TYPE_NONE;
             codec_ = avcodec_find_decoder(AV_CODEC_ID_H264);
+
             if (!codec_) {
                 RCLCPP_ERROR(this->get_logger(), "No %s decoder available", decoder_name_.c_str());
                 return;
             }
+        } else if (use_cuda) {
+            RCLCPP_INFO(
+                this->get_logger(),
+                "Using hardware %s decoder (NVDEC)",
+                decoder_name_.c_str());
         } else {
-            RCLCPP_INFO(this->get_logger(), "Using hardware %s decoder (NVDEC)", decoder_name_.c_str());
+            RCLCPP_INFO(
+                this->get_logger(),
+                "Using software %s decoder",
+                decoder_name_.c_str());
         }
 
         if (hw_type_ != AV_HWDEVICE_TYPE_NONE) {
-            int err = av_hwdevice_ctx_create(&hw_device_ctx_, hw_type_, nullptr, nullptr, 0);
+            int err = av_hwdevice_ctx_create(
+                &hw_device_ctx_, hw_type_, nullptr, nullptr, 0);
+
             if (err < 0) {
-                char errbuf[128]; // more than AV_ERROR_MAX_STRING_SIZE
+                char errbuf[128];
                 av_strerror(err, errbuf, sizeof(errbuf));
-                RCLCPP_WARN(this->get_logger(),
-                "av_hwdevice_ctx_create failed (%d): %s",
-                err,
-                errbuf);
+
+                RCLCPP_WARN(
+                    this->get_logger(),
+                    "CUDA device creation failed (%d): %s. Falling back to software.",
+                    err,
+                    errbuf);
+
                 hw_type_ = AV_HWDEVICE_TYPE_NONE;
                 codec_ = avcodec_find_decoder(AV_CODEC_ID_H264);
+
                 if (!codec_) {
-                    RCLCPP_ERROR(this->get_logger(), "No %s decoder available", decoder_name_.c_str());
+                    RCLCPP_ERROR(this->get_logger(), "No H.264 software decoder available");
                     return;
                 }
             } else {
-                RCLCPP_INFO(this->get_logger(), "CUDA Hardware Device Context successfully created on GPU 0");
+                RCLCPP_INFO(
+                    this->get_logger(),
+                    "CUDA Hardware Device Context successfully created on GPU 0");
             }
         }
 
