@@ -2,8 +2,18 @@ cmake_minimum_required(VERSION 3.8)
 project(insta360_ros2_equilib_driver)
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-  add_compile_options(-O3 -march=native -ffast-math -Wall -Wextra -Wpedantic)
+  add_compile_options(
+    $<$<COMPILE_LANGUAGE:CXX>:-O3>
+    $<$<COMPILE_LANGUAGE:CXX>:-march=native>
+    $<$<COMPILE_LANGUAGE:CXX>:-ffast-math>
+    $<$<COMPILE_LANGUAGE:CXX>:-Wall>
+    $<$<COMPILE_LANGUAGE:CXX>:-Wextra>
+    $<$<COMPILE_LANGUAGE:CXX>:-Wpedantic>
+  )
 endif()
+
+enable_language(CUDA)
+find_package(CUDAToolkit REQUIRED)
 
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
@@ -52,7 +62,26 @@ ament_target_dependencies(decoder
   rclcpp camera_info_manager cv_bridge image_transport sensor_msgs std_msgs std_srvs OpenCV
 )
 
-install(TARGETS ${PROJECT_NAME} decoder DESTINATION lib/${PROJECT_NAME})
+add_executable(cuda_stitcher
+  src/cuda_stitcher_node.cpp
+  src/cuda_stitcher.cu
+)
+target_include_directories(cuda_stitcher PRIVATE include)
+target_link_libraries(cuda_stitcher CUDA::cudart)
+target_compile_features(cuda_stitcher PRIVATE cxx_std_17)
+target_compile_options(cuda_stitcher PRIVATE
+  $<$<COMPILE_LANGUAGE:CUDA>:-O3>
+  $<$<COMPILE_LANGUAGE:CUDA>:--use_fast_math>
+)
+set_target_properties(cuda_stitcher PROPERTIES
+  CUDA_ARCHITECTURES 75
+  CUDA_RUNTIME_LIBRARY Shared
+  CUDA_STANDARD 17
+  CUDA_STANDARD_REQUIRED ON
+)
+ament_target_dependencies(cuda_stitcher rclcpp sensor_msgs)
+
+install(TARGETS ${PROJECT_NAME} decoder cuda_stitcher DESTINATION lib/${PROJECT_NAME})
 
 # Python modules
 ament_python_install_package(${PROJECT_NAME})

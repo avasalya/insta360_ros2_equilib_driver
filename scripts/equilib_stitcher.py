@@ -27,6 +27,10 @@ class EquiLibStitcher(Node):
         self._declare_parameters()
         self.bridge = CvBridge()
         self.device = self._select_device()
+        self.compute_dtype = (
+            torch.float16 if self.device.type == "cuda" else torch.float32
+        )
+        self.cached_params = self._read_parameters()
         self.stitch_grid: torch.Tensor | None = None
         self.input_shape: tuple[int, int] | None = None
         self.maps_dirty = True
@@ -118,6 +122,9 @@ class EquiLibStitcher(Node):
         }
         if any(parameter.name in map_parameters for parameter in parameters):
             self.maps_dirty = True
+        for parameter in parameters:
+            if parameter.name in self._parameter_names:
+                self.cached_params[parameter.name] = parameter.value
         return SetParametersResult(successful=True)
 
     def _read_parameters(self) -> dict[str, Any]:
@@ -149,7 +156,7 @@ class EquiLibStitcher(Node):
         )
 
     def _rebuild_stitch_grid(self, source_height: int, source_width: int) -> None:
-        params = self._read_parameters()
+        params = self.cached_params
         if source_width % 2:
             raise ValueError("dual-fisheye image width must be even")
         lens_width = source_width // 2
@@ -222,7 +229,11 @@ class EquiLibStitcher(Node):
         # Correct normalization relative to full source tensor frame
         grid_x = source_x / (source_width - 1) * 2.0 - 1.0
         grid_y = source_y / (source_height - 1) * 2.0 - 1.0
-        self.stitch_grid = torch.stack((grid_x, grid_y), dim=-1).unsqueeze(0)
+        self.stitch_grid = (
+            torch.stack((grid_x, grid_y), dim=-1)
+            .unsqueeze(0)
+            .to(dtype=self.compute_dtype)
+        )
         self.input_shape = (source_height, source_width)
         self.maps_dirty = False
         self.get_logger().info(
@@ -290,10 +301,16 @@ class EquiLibStitcher(Node):
                 self._rebuild_stitch_grid(source_height, source_width)
             assert self.stitch_grid is not None
 
-            # Stream direct frame into GPU without CPU rotations or slicing
-            rgb = np.ascontiguousarray(bgr[..., ::-1])
-            source = torch.from_numpy(rgb).to(self.device, non_blocking=True)
-            source = source.permute(2, 0, 1).unsqueeze(0).float() / 255.0
+            # Geometry is channel-independent. Keep decoder-native BGR to avoid
+            # an 8 MiB BGR->RGB CPU copy on every 2304x1152 frame.
+            if not bgr.flags.c_contiguous:
+                bgr = np.ascontiguousarray(bgr)
+            source = torch.from_numpy(bgr).to(
+                self.device,
+                dtype=self.compute_dtype,
+                non_blocking=True,
+            )
+            source = source.permute(2, 0, 1).unsqueeze(0).div_(255.0)
 
             panorama = torch_f.grid_sample(
                 source,
@@ -303,7 +320,7 @@ class EquiLibStitcher(Node):
                 align_corners=True,
             )
 
-            params = self._read_parameters()
+            params = self.cached_params
             self._ensure_equilib_transforms(params)
             equi_rotation = (
                 float(params["equi_roll_deg"]),
@@ -319,7 +336,7 @@ class EquiLibStitcher(Node):
                     rots=[self._rotation(*equi_rotation)],
                 )
             if params["publish_equirectangular"]:
-                self._publish_rgb(panorama, self.equirectangular_publisher, message)
+                self._publish_bgr(panorama, self.equirectangular_publisher, message)
                 self.frames_published += 1
 
             if params["publish_perspective"]:
@@ -334,7 +351,7 @@ class EquiLibStitcher(Node):
                         )
                     ],
                 )
-                self._publish_rgb(perspective, self.perspective_publisher, message)
+                self._publish_bgr(perspective, self.perspective_publisher, message)
         except (
             Exception
         ) as error:  # Keep the camera pipeline alive after a malformed frame.
@@ -367,10 +384,10 @@ class EquiLibStitcher(Node):
         self.last_stats_published = self.frames_published
         self.max_callback_ms = 0.0
 
-    def _publish_rgb(self, tensor: torch.Tensor, publisher: Any, source: Image) -> None:
+    def _publish_bgr(self, tensor: torch.Tensor, publisher: Any, source: Image) -> None:
         image = tensor.squeeze(0).permute(1, 2, 0).clamp(0.0, 1.0)
-        rgb = (image * 255.0).byte().cpu().numpy()
-        output = self.bridge.cv2_to_imgmsg(rgb, encoding="rgb8")
+        bgr = (image * 255.0).byte().cpu().numpy()
+        output = self.bridge.cv2_to_imgmsg(bgr, encoding="bgr8")
         output.header = source.header
         publisher.publish(output)
 

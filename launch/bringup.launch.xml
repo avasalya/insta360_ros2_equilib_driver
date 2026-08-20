@@ -3,6 +3,7 @@
   <arg name="equirectangular" default="true"/>
   <arg name="perspective" default="false"/>
   <arg name="viewer" default="false"/>
+  <arg name="native_cuda_stitcher" default="true"/>
   <arg name="cuda_visible_devices" default="0"/>
   <arg name="equilib_config" default="$(find-pkg-share insta360_ros2_equilib_driver)/config/equilib.yaml"/>
 
@@ -33,10 +34,18 @@
 
   <node pkg="insta360_ros2_equilib_driver" exec="equilib_stitcher.py"
         name="equilib_stitcher" output="screen"
-        if="$(var stitcher_enabled)">
+        unless="$(var native_cuda_stitcher)">
     <param from="$(var equilib_config)"/>
     <param name="publish_equirectangular" value="$(var equirectangular)"/>
     <param name="publish_perspective" value="$(var perspective)"/>
+  </node>
+
+  <node pkg="insta360_ros2_equilib_driver" exec="cuda_stitcher"
+        name="equilib_stitcher" output="screen"
+        if="$(var native_cuda_stitcher)">
+    <param from="$(var equilib_config)"/>
+    <param name="publish_equirectangular" value="$(var equirectangular)"/>
+    <param name="cuda_device" value="0"/>
   </node>
 
   <node pkg="image_view" exec="image_view" name="live_viewer" output="screen"
