@@ -2,6 +2,7 @@
 <launch>
   <arg name="equirectangular" default="true"/>
   <arg name="perspective" default="false"/>
+  <arg name="viewer" default="false"/>
   <arg name="cuda_visible_devices" default="0"/>
   <arg name="equilib_config" default="$(find-pkg-share insta360_ros2_equilib_driver)/config/equilib.yaml"/>
 
@@ -38,7 +39,8 @@
     <param name="publish_perspective" value="$(var perspective)"/>
   </node>
 
-  <node pkg="image_view" exec="image_view" name="live_viewer" output="screen">
+  <node pkg="image_view" exec="image_view" name="live_viewer" output="screen"
+        if="$(var viewer)">
     <remap from="image" to="$(var view_topic)"/>
   </node>
 

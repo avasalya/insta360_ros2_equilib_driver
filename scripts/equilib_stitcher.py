@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import math
+import time
 from typing import Any
 
 import numpy as np
@@ -32,6 +33,14 @@ class EquiLibStitcher(Node):
         self.transforms_key: tuple[Any, ...] | None = None
         self.equi_rotation: Equi2Equi | None = None
         self.perspective_projection: Equi2Pers | None = None
+        self.frames_received = 0
+        self.frames_published = 0
+        self.last_stats_time = time.monotonic()
+        self.last_stats_received = 0
+        self.last_stats_published = 0
+        self.last_callback_ms = 0.0
+        self.max_callback_ms = 0.0
+        self.stats_timer = self.create_timer(2.0, self._log_stats)
 
         qos = QoSProfile(depth=1, reliability=ReliabilityPolicy.BEST_EFFORT)
         self.subscription = self.create_subscription(
@@ -271,6 +280,8 @@ class EquiLibStitcher(Node):
         self.transforms_key = key
 
     def image_callback(self, message: Image) -> None:
+        callback_started = time.perf_counter()
+        self.frames_received += 1
         try:
             bgr = self.bridge.imgmsg_to_cv2(message, desired_encoding="bgr8")
             source_height, source_width = bgr.shape[:2]
@@ -308,6 +319,7 @@ class EquiLibStitcher(Node):
             )
             if params["publish_equirectangular"]:
                 self._publish_rgb(panorama, self.equirectangular_publisher, message)
+                self.frames_published += 1
 
             if params["publish_perspective"]:
                 assert self.perspective_projection is not None
@@ -326,6 +338,33 @@ class EquiLibStitcher(Node):
             Exception
         ) as error:  # Keep the camera pipeline alive after a malformed frame.
             self.get_logger().error(f"Failed to stitch dual-fisheye frame: {error}")
+        finally:
+            callback_ms = (time.perf_counter() - callback_started) * 1000.0
+            self.last_callback_ms = callback_ms
+            self.max_callback_ms = max(self.max_callback_ms, callback_ms)
+
+    def _log_stats(self) -> None:
+        now = time.monotonic()
+        elapsed = now - self.last_stats_time
+        if elapsed < 2.0:
+            return
+        received_delta = self.frames_received - self.last_stats_received
+        published_delta = self.frames_published - self.last_stats_published
+        cuda_allocated_mb = 0.0
+        if self.device.type == "cuda":
+            cuda_allocated_mb = torch.cuda.memory_allocated(self.device) / (1024.0 * 1024.0)
+        self.get_logger().info(
+            "[STATS] "
+            f"input={received_delta / elapsed:.1f} fps "
+            f"equirect={published_delta / elapsed:.1f} fps "
+            f"callback={self.last_callback_ms:.1f} ms max={self.max_callback_ms:.1f} ms "
+            f"subscribers={self.equirectangular_publisher.get_subscription_count()} "
+            f"cuda_allocated={cuda_allocated_mb:.0f} MiB"
+        )
+        self.last_stats_time = now
+        self.last_stats_received = self.frames_received
+        self.last_stats_published = self.frames_published
+        self.max_callback_ms = 0.0
 
     def _publish_rgb(self, tensor: torch.Tensor, publisher: Any, source: Image) -> None:
         image = tensor.squeeze(0).permute(1, 2, 0).clamp(0.0, 1.0)
