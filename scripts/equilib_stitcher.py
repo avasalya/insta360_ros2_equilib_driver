@@ -279,6 +279,7 @@ class EquiLibStitcher(Node):
         )
         self.transforms_key = key
 
+    @torch.inference_mode()
     def image_callback(self, message: Image) -> None:
         callback_started = time.perf_counter()
         self.frames_received += 1
@@ -304,19 +305,19 @@ class EquiLibStitcher(Node):
 
             params = self._read_parameters()
             self._ensure_equilib_transforms(params)
-            assert self.equi_rotation is not None
-            # The node uses a BxCxHxW tensor, so EquiLib requires one rotation
-            # dictionary per batch entry.
-            panorama = self.equi_rotation(
-                src=panorama,
-                rots=[
-                    self._rotation(
-                        params["equi_roll_deg"],
-                        params["equi_pitch_deg"],
-                        params["equi_yaw_deg"],
-                    )
-                ],
+            equi_rotation = (
+                float(params["equi_roll_deg"]),
+                float(params["equi_pitch_deg"]),
+                float(params["equi_yaw_deg"]),
             )
+            # The stitch grid already produces an equirectangular panorama.
+            # Avoid another full-resolution resampling pass for zero rotation.
+            if any(abs(value) > 1e-6 for value in equi_rotation):
+                assert self.equi_rotation is not None
+                panorama = self.equi_rotation(
+                    src=panorama,
+                    rots=[self._rotation(*equi_rotation)],
+                )
             if params["publish_equirectangular"]:
                 self._publish_rgb(panorama, self.equirectangular_publisher, message)
                 self.frames_published += 1
