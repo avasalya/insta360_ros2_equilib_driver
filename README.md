@@ -1,11 +1,11 @@
-# Insta360 ROS 2 Jazzy Driver
+# Insta360 ROS 2 Jazzy Driver with fast CUDA-Stitcher
 
 ROS 2 Jazzy driver for capturing an Insta360 dual-fisheye stream, decoding
 H.264, and producing a full-resolution equirectangular image with a native
 C++/CUDA stitcher.
 
 The driver is managed and built by the independent `panotrack` Pixi
-environment in the parent repository.
+environment in the [`parent repository`](https://github.com/avasalya/pixi_insta360_ros2_jazzy_driver/tree/panotrack).
 
 ## Current pipeline
 
@@ -211,7 +211,7 @@ pixi run -e panotrack -- ros2 launch \
 The viewer is disabled by default because an additional full-resolution ROS
 subscriber increases memory traffic.
 
-## Python stitcher fallback
+## Python (Pytorch or CPU) stitcher fallback
 
 For comparison or debugging:
 
@@ -277,6 +277,27 @@ with:
 ```bash
 pixi run -e panotrack ffmpeg
 ```
+
+
+## Switch GPU to CPU
+
+To switch from GPU to CPU:
+
+1. In `src/insta360_ros2_equilib_driver/launch/bringup.launch.xml`, change:
+
+```xml
+<param name="decoder_name" value="h264_cuvid"/>
+```
+
+```xml
+<param name="decoder_name" value="h264"/>
+```
+
+and
+Set `gpu: false` in `config/equilib.yaml` to use the CPU path.
+Adjust the same file for the fisheye calibration and output dimensions.
+
+
 
 ## Topics
 
