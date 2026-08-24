@@ -270,9 +270,14 @@ int main(int argc, char* argv[]) {
                 const uint64_t current_frames = camera.video_frame_count();
                 RCLCPP_INFO(
                     node->get_logger(),
-                    "[CAMERA STATS] compressed=%.1f fps total=%lu",
+                    "[CAMERA STATS] compressed=%.1f fps total=%lu wall_ns=%lld",
                     static_cast<double>(current_frames - previous_frames) / log_elapsed,
-                    static_cast<unsigned long>(current_frames));
+                    static_cast<unsigned long>(current_frames),
+                    static_cast<long long>(
+                        std::chrono::duration_cast<std::chrono::nanoseconds>(
+                            std::chrono::system_clock::now().time_since_epoch()
+                        ).count()
+                    ));
                 previous_frames = current_frames;
                 previous_log = now;
             }

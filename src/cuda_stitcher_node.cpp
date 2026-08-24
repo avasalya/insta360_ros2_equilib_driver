@@ -225,13 +225,16 @@ private:
     RCLCPP_INFO(
       get_logger(),
       "[STATS] input=%.1f fps equirect=%.1f fps dropped=%lu "
-      "cuda=%.2f ms max_cuda=%.2f ms subscribers=%zu",
+      "cuda=%.2f ms max_cuda=%.2f ms subscribers=%zu wall_ns=%lld",
       static_cast<double>(received_delta) / elapsed,
       static_cast<double>(published_delta) / elapsed,
       static_cast<unsigned long>(dropped_delta),
       average_cuda_ms,
       static_cast<double>(max_cuda_time) / 1000.0,
-      publisher_->get_subscription_count());
+      publisher_->get_subscription_count(),
+      static_cast<long long>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(
+          std::chrono::system_clock::now().time_since_epoch()).count()));
 
     last_stats_time_ = now;
     last_received_ = received;
