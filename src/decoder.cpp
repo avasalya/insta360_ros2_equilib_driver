@@ -5,6 +5,7 @@
 #include <mutex>
 #include <condition_variable>
 #include <atomic>
+#include <nvtx3/nvToolsExt.h>
 
 #include <opencv2/opencv.hpp>
 
@@ -21,6 +22,12 @@ extern "C" {
     #include <libswscale/swscale.h>
     #include <libavutil/imgutils.h>
 }
+
+class NvtxScopedRange {
+public:
+    explicit NvtxScopedRange(const char* name) { nvtxRangePushA(name); }
+    ~NvtxScopedRange() { nvtxRangePop(); }
+};
 
 static enum AVPixelFormat get_hw_format(AVCodecContext *ctx, const enum AVPixelFormat *pix_fmts) {
     const enum AVPixelFormat *p;
@@ -48,8 +55,12 @@ private:
     rclcpp::Subscription<sensor_msgs::msg::CompressedImage>::SharedPtr subscription_;
     rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr publisher_;
 
+    struct TimedFrame {
+        cv::Mat image;
+        std_msgs::msg::Header header;
+    };
     std::thread publisher_thread_;
-    std::queue<cv::Mat> frame_publish_queue_;
+    std::queue<TimedFrame> frame_publish_queue_;
     std::mutex queue_mutex_;
     std::condition_variable queue_cv_;
     std::atomic<bool> stop_publisher_thread_{false};
@@ -61,38 +72,63 @@ private:
     std::string decoder_name_;
 
     void InitFFmpegDecoder() {
-        hw_type_ = AV_HWDEVICE_TYPE_CUDA;
+        // Only use CUDA for an explicitly requested hardware decoder.
+        const bool use_cuda = (decoder_name_ == "h264_cuvid");
+
+        hw_type_ = use_cuda ? AV_HWDEVICE_TYPE_CUDA : AV_HWDEVICE_TYPE_NONE;
 
         codec_ = avcodec_find_decoder_by_name(decoder_name_.c_str());
+
         if (!codec_) {
-            RCLCPP_WARN(this->get_logger(), "Decoder '%s' not found in FFmpeg library registry. Falling back to software.", decoder_name_.c_str());
+            RCLCPP_WARN(
+                this->get_logger(),
+                "Decoder '%s' not found. Falling back to software H.264 decoder.",
+                decoder_name_.c_str());
+
             hw_type_ = AV_HWDEVICE_TYPE_NONE;
             codec_ = avcodec_find_decoder(AV_CODEC_ID_H264);
+
             if (!codec_) {
                 RCLCPP_ERROR(this->get_logger(), "No %s decoder available", decoder_name_.c_str());
                 return;
             }
+        } else if (use_cuda) {
+            RCLCPP_INFO(
+                this->get_logger(),
+                "Using hardware %s decoder (NVDEC)",
+                decoder_name_.c_str());
         } else {
-            RCLCPP_INFO(this->get_logger(), "Using hardware %s decoder (NVDEC)", decoder_name_.c_str());
+            RCLCPP_INFO(
+                this->get_logger(),
+                "Using software %s decoder",
+                decoder_name_.c_str());
         }
 
         if (hw_type_ != AV_HWDEVICE_TYPE_NONE) {
-            int err = av_hwdevice_ctx_create(&hw_device_ctx_, hw_type_, nullptr, nullptr, 0);
+            int err = av_hwdevice_ctx_create(
+                &hw_device_ctx_, hw_type_, nullptr, nullptr, 0);
+
             if (err < 0) {
-                char errbuf[128]; // more than AV_ERROR_MAX_STRING_SIZE
+                char errbuf[128];
                 av_strerror(err, errbuf, sizeof(errbuf));
-                RCLCPP_WARN(this->get_logger(),
-                "av_hwdevice_ctx_create failed (%d): %s",
-                err,
-                errbuf);
+
+                RCLCPP_WARN(
+                    this->get_logger(),
+                    "CUDA device creation failed (%d): %s. Falling back to software.",
+                    err,
+                    errbuf);
+
                 hw_type_ = AV_HWDEVICE_TYPE_NONE;
                 codec_ = avcodec_find_decoder(AV_CODEC_ID_H264);
+
                 if (!codec_) {
-                    RCLCPP_ERROR(this->get_logger(), "No %s decoder available", decoder_name_.c_str());
+                    RCLCPP_ERROR(this->get_logger(), "No H.264 software decoder available");
                     return;
                 }
             } else {
-                RCLCPP_INFO(this->get_logger(), "CUDA Hardware Device Context successfully created on GPU 0");
+                RCLCPP_INFO(
+                    this->get_logger(),
+                    "CUDA Hardware Device Context successfully created on GPU 0");
             }
         }
 
@@ -150,7 +186,7 @@ private:
 
     void PublisherThreadLoop() {
         while (!stop_publisher_thread_) {
-            cv::Mat frame_to_publish;
+            TimedFrame frame_to_publish;
             {
                 std::unique_lock<std::mutex> lock(queue_mutex_);
                 queue_cv_.wait(lock, [this] {
@@ -167,19 +203,20 @@ private:
                 frame_publish_queue_.pop();
             }
 
-            if (!frame_to_publish.empty() && publisher_) {
+            if (!frame_to_publish.image.empty() && publisher_) {
                 auto img_msg = std::make_unique<sensor_msgs::msg::Image>();
-                std_msgs::msg::Header header;
-                header.stamp = this->get_clock()->now();
-                header.frame_id = "camera_frame";
-                cv_bridge::CvImage cv_image(header, sensor_msgs::image_encodings::BGR8, frame_to_publish);
+                cv_bridge::CvImage cv_image(
+                    frame_to_publish.header,
+                    sensor_msgs::image_encodings::BGR8,
+                    frame_to_publish.image);
                 cv_image.toImageMsg(*img_msg);
                 publisher_->publish(std::move(img_msg));
             }
         }
     }
 
-    void DecodeAndDisplayPacket(AVPacket* packet) {
+    void DecodeAndDisplayPacket(
+        AVPacket* packet, const std_msgs::msg::Header& source_header) {
         int ret = avcodec_send_packet(codec_ctx_, packet);
         if (ret < 0) {
             return;
@@ -193,6 +230,8 @@ private:
             } else if (ret < 0) {
                 return;
             }
+
+            NvtxScopedRange profile_range("camera/decoder_frame");
 
             AVFrame* frame_to_display = hw_frame_;
 
@@ -240,7 +279,7 @@ private:
                     {
                         std::lock_guard<std::mutex> lock(queue_mutex_);
                         if (frame_publish_queue_.size() < max_queue_size_) {
-                            frame_publish_queue_.push(frame_copy);
+                            frame_publish_queue_.push({frame_copy, source_header});
                         }
                     }
                     queue_cv_.notify_one();
@@ -316,10 +355,10 @@ private:
                     // Parse NAL unit type from H.264 stream
                     // The parser sets keyframe flag for I-frames
                     if (parser_ctx_->key_frame == 1) {
-                        DecodeAndDisplayPacket(pkt_);
+                        DecodeAndDisplayPacket(pkt_, msg->header);
                     }
                 } else {
-                    DecodeAndDisplayPacket(pkt_);
+                    DecodeAndDisplayPacket(pkt_, msg->header);
                 }
             }
         }

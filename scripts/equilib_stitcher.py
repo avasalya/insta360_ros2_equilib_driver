@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import math
+import time
 from typing import Any
 
 import numpy as np
@@ -25,15 +26,25 @@ class EquiLibStitcher(Node):
         super().__init__("equilib_stitcher")
         self._declare_parameters()
         self.bridge = CvBridge()
-        self.device = torch.device(
-            "cuda" if self.get_parameter("gpu").value and torch.cuda.is_available() else "cpu"
+        self.device = self._select_device()
+        self.compute_dtype = (
+            torch.float16 if self.device.type == "cuda" else torch.float32
         )
+        self.cached_params = self._read_parameters()
         self.stitch_grid: torch.Tensor | None = None
         self.input_shape: tuple[int, int] | None = None
         self.maps_dirty = True
         self.transforms_key: tuple[Any, ...] | None = None
         self.equi_rotation: Equi2Equi | None = None
         self.perspective_projection: Equi2Pers | None = None
+        self.frames_received = 0
+        self.frames_published = 0
+        self.last_stats_time = time.monotonic()
+        self.last_stats_received = 0
+        self.last_stats_published = 0
+        self.last_callback_ms = 0.0
+        self.max_callback_ms = 0.0
+        self.stats_timer = self.create_timer(2.0, self._log_stats)
 
         qos = QoSProfile(depth=1, reliability=ReliabilityPolicy.BEST_EFFORT)
         self.subscription = self.create_subscription(
@@ -50,6 +61,26 @@ class EquiLibStitcher(Node):
             f"EquiLib stitcher using {self.device.type.upper()} "
             f"(CUDA available: {torch.cuda.is_available()})"
         )
+
+    def _select_device(self) -> torch.device:
+        """Use CUDA only when this PyTorch build supports the installed GPU."""
+        if not self.get_parameter("gpu").value:
+            return torch.device("cpu")
+        if not torch.cuda.is_available():
+            self.get_logger().warning("CUDA requested but unavailable; using CPU")
+            return torch.device("cpu")
+
+        capability = torch.cuda.get_device_capability()
+        architecture = f"sm_{capability[0]}{capability[1]}"
+        supported_architectures = set(torch.cuda.get_arch_list())
+        if architecture not in supported_architectures:
+            supported = ", ".join(sorted(supported_architectures)) or "none"
+            self.get_logger().warning(
+                f"CUDA device capability {architecture} is not supported by this PyTorch build "
+                f"({supported}); using CPU"
+            )
+            return torch.device("cpu")
+        return torch.device("cuda")
 
     def _declare_parameters(self) -> None:
         defaults: dict[str, Any] = {
@@ -79,11 +110,21 @@ class EquiLibStitcher(Node):
 
     def parameter_callback(self, parameters: list[Any]) -> SetParametersResult:
         map_parameters = {
-            "cx_offset", "cy_offset", "crop_size", "translation", "rotation_deg",
-            "out_width", "out_height", "gpu", "fisheye_fov_deg"
+            "cx_offset",
+            "cy_offset",
+            "crop_size",
+            "translation",
+            "rotation_deg",
+            "out_width",
+            "out_height",
+            "gpu",
+            "fisheye_fov_deg",
         }
         if any(parameter.name in map_parameters for parameter in parameters):
             self.maps_dirty = True
+        for parameter in parameters:
+            if parameter.name in self._parameter_names:
+                self.cached_params[parameter.name] = parameter.value
         return SetParametersResult(successful=True)
 
     def _read_parameters(self) -> dict[str, Any]:
@@ -92,16 +133,30 @@ class EquiLibStitcher(Node):
     @property
     def _parameter_names(self) -> tuple[str, ...]:
         return (
-            "cx_offset", "cy_offset", "crop_size", "translation", "rotation_deg", "gpu",
-            "out_width", "out_height", "equi_roll_deg", "equi_pitch_deg", "equi_yaw_deg",
+            "cx_offset",
+            "cy_offset",
+            "crop_size",
+            "translation",
+            "rotation_deg",
+            "gpu",
+            "out_width",
+            "out_height",
+            "equi_roll_deg",
+            "equi_pitch_deg",
+            "equi_yaw_deg",
             "fisheye_fov_deg",
-            "publish_equirectangular", "publish_perspective", "perspective_width",
-            "perspective_height", "perspective_fov_x", "perspective_roll_deg",
-            "perspective_pitch_deg", "perspective_yaw_deg",
+            "publish_equirectangular",
+            "publish_perspective",
+            "perspective_width",
+            "perspective_height",
+            "perspective_fov_x",
+            "perspective_roll_deg",
+            "perspective_pitch_deg",
+            "perspective_yaw_deg",
         )
 
     def _rebuild_stitch_grid(self, source_height: int, source_width: int) -> None:
-        params = self._read_parameters()
+        params = self.cached_params
         if source_width % 2:
             raise ValueError("dual-fisheye image width must be even")
         lens_width = source_width // 2
@@ -142,7 +197,9 @@ class EquiLibStitcher(Node):
 
         roll, pitch, yaw = [math.radians(value) for value in params["rotation_deg"]]
         rotation = self._rotation_matrix(roll, pitch, yaw)
-        translation = torch.tensor(params["translation"], device=self.device, dtype=torch.float32)
+        translation = torch.tensor(
+            params["translation"], device=self.device, dtype=torch.float32
+        )
 
         points = torch.stack((x_val, y_val, z_val), dim=-1)
         transformed = points @ rotation.T + translation
@@ -172,27 +229,49 @@ class EquiLibStitcher(Node):
         # Correct normalization relative to full source tensor frame
         grid_x = source_x / (source_width - 1) * 2.0 - 1.0
         grid_y = source_y / (source_height - 1) * 2.0 - 1.0
-        self.stitch_grid = torch.stack((grid_x, grid_y), dim=-1).unsqueeze(0)
+        self.stitch_grid = (
+            torch.stack((grid_x, grid_y), dim=-1)
+            .unsqueeze(0)
+            .to(dtype=self.compute_dtype)
+        )
         self.input_shape = (source_height, source_width)
         self.maps_dirty = False
         self.get_logger().info(
-            f"Built CUDA stitch map: {source_width}x{source_height} -> "
+            f"Built {self.device.type.upper()} stitch map: {source_width}x{source_height} -> "
             f"{output_width}x{output_height}"
         )
 
     def _rotation_matrix(self, roll: float, pitch: float, yaw: float) -> torch.Tensor:
         cos, sin = math.cos, math.sin
-        rx = torch.tensor(((1.0, 0.0, 0.0), (0.0, cos(roll), -sin(roll)),
-                           (0.0, sin(roll), cos(roll))), device=self.device)
-        ry = torch.tensor(((cos(pitch), 0.0, sin(pitch)), (0.0, 1.0, 0.0),
-                           (-sin(pitch), 0.0, cos(pitch))), device=self.device)
-        rz = torch.tensor(((cos(yaw), -sin(yaw), 0.0), (sin(yaw), cos(yaw), 0.0),
-                           (0.0, 0.0, 1.0)), device=self.device)
+        rx = torch.tensor(
+            (
+                (1.0, 0.0, 0.0),
+                (0.0, cos(roll), -sin(roll)),
+                (0.0, sin(roll), cos(roll)),
+            ),
+            device=self.device,
+        )
+        ry = torch.tensor(
+            (
+                (cos(pitch), 0.0, sin(pitch)),
+                (0.0, 1.0, 0.0),
+                (-sin(pitch), 0.0, cos(pitch)),
+            ),
+            device=self.device,
+        )
+        rz = torch.tensor(
+            ((cos(yaw), -sin(yaw), 0.0), (sin(yaw), cos(yaw), 0.0), (0.0, 0.0, 1.0)),
+            device=self.device,
+        )
         return rz @ ry @ rx
 
     @staticmethod
     def _rotation(roll: float, pitch: float, yaw: float) -> dict[str, float]:
-        return {"roll": math.radians(roll), "pitch": math.radians(pitch), "yaw": math.radians(yaw)}
+        return {
+            "roll": math.radians(roll),
+            "pitch": math.radians(pitch),
+            "yaw": math.radians(yaw),
+        }
 
     def _ensure_equilib_transforms(self, params: dict[str, Any]) -> None:
         """Create cached EquiLib transforms when their configuration changes."""
@@ -211,7 +290,10 @@ class EquiLibStitcher(Node):
         )
         self.transforms_key = key
 
+    @torch.inference_mode()
     def image_callback(self, message: Image) -> None:
+        callback_started = time.perf_counter()
+        self.frames_received += 1
         try:
             bgr = self.bridge.imgmsg_to_cv2(message, desired_encoding="bgr8")
             source_height, source_width = bgr.shape[:2]
@@ -219,46 +301,93 @@ class EquiLibStitcher(Node):
                 self._rebuild_stitch_grid(source_height, source_width)
             assert self.stitch_grid is not None
 
-            # Stream direct frame into GPU without CPU rotations or slicing
-            rgb = np.ascontiguousarray(bgr[..., ::-1])
-            source = torch.from_numpy(rgb).to(self.device, non_blocking=True)
-            source = source.permute(2, 0, 1).unsqueeze(0).float() / 255.0
+            # Geometry is channel-independent. Keep decoder-native BGR to avoid
+            # an 8 MiB BGR->RGB CPU copy on every 2304x1152 frame.
+            if not bgr.flags.c_contiguous:
+                bgr = np.ascontiguousarray(bgr)
+            source = torch.from_numpy(bgr).to(
+                self.device,
+                dtype=self.compute_dtype,
+                non_blocking=True,
+            )
+            source = source.permute(2, 0, 1).unsqueeze(0).div_(255.0)
 
             panorama = torch_f.grid_sample(
-                source, self.stitch_grid, mode="bilinear", padding_mode="zeros", align_corners=True
+                source,
+                self.stitch_grid,
+                mode="bilinear",
+                padding_mode="zeros",
+                align_corners=True,
             )
 
-            params = self._read_parameters()
+            params = self.cached_params
             self._ensure_equilib_transforms(params)
-            assert self.equi_rotation is not None
-            # The node uses a BxCxHxW tensor, so EquiLib requires one rotation
-            # dictionary per batch entry.
-            panorama = self.equi_rotation(
-                src=panorama,
-                rots=[self._rotation(
-                    params["equi_roll_deg"], params["equi_pitch_deg"], params["equi_yaw_deg"]
-                )],
+            equi_rotation = (
+                float(params["equi_roll_deg"]),
+                float(params["equi_pitch_deg"]),
+                float(params["equi_yaw_deg"]),
             )
+            # The stitch grid already produces an equirectangular panorama.
+            # Avoid another full-resolution resampling pass for zero rotation.
+            if any(abs(value) > 1e-6 for value in equi_rotation):
+                assert self.equi_rotation is not None
+                panorama = self.equi_rotation(
+                    src=panorama,
+                    rots=[self._rotation(*equi_rotation)],
+                )
             if params["publish_equirectangular"]:
-                self._publish_rgb(panorama, self.equirectangular_publisher, message)
+                self._publish_bgr(panorama, self.equirectangular_publisher, message)
+                self.frames_published += 1
 
             if params["publish_perspective"]:
                 assert self.perspective_projection is not None
                 perspective = self.perspective_projection(
                     equi=panorama,
-                    rots=[self._rotation(
-                        params["perspective_roll_deg"], params["perspective_pitch_deg"],
-                        params["perspective_yaw_deg"],
-                    )],
+                    rots=[
+                        self._rotation(
+                            params["perspective_roll_deg"],
+                            params["perspective_pitch_deg"],
+                            params["perspective_yaw_deg"],
+                        )
+                    ],
                 )
-                self._publish_rgb(perspective, self.perspective_publisher, message)
-        except Exception as error:  # Keep the camera pipeline alive after a malformed frame.
+                self._publish_bgr(perspective, self.perspective_publisher, message)
+        except (
+            Exception
+        ) as error:  # Keep the camera pipeline alive after a malformed frame.
             self.get_logger().error(f"Failed to stitch dual-fisheye frame: {error}")
+        finally:
+            callback_ms = (time.perf_counter() - callback_started) * 1000.0
+            self.last_callback_ms = callback_ms
+            self.max_callback_ms = max(self.max_callback_ms, callback_ms)
 
-    def _publish_rgb(self, tensor: torch.Tensor, publisher: Any, source: Image) -> None:
+    def _log_stats(self) -> None:
+        now = time.monotonic()
+        elapsed = now - self.last_stats_time
+        if elapsed < 2.0:
+            return
+        received_delta = self.frames_received - self.last_stats_received
+        published_delta = self.frames_published - self.last_stats_published
+        cuda_allocated_mb = 0.0
+        if self.device.type == "cuda":
+            cuda_allocated_mb = torch.cuda.memory_allocated(self.device) / (1024.0 * 1024.0)
+        self.get_logger().info(
+            "[STATS] "
+            f"input={received_delta / elapsed:.1f} fps "
+            f"equirect={published_delta / elapsed:.1f} fps "
+            f"callback={self.last_callback_ms:.1f} ms max={self.max_callback_ms:.1f} ms "
+            f"subscribers={self.equirectangular_publisher.get_subscription_count()} "
+            f"cuda_allocated={cuda_allocated_mb:.0f} MiB"
+        )
+        self.last_stats_time = now
+        self.last_stats_received = self.frames_received
+        self.last_stats_published = self.frames_published
+        self.max_callback_ms = 0.0
+
+    def _publish_bgr(self, tensor: torch.Tensor, publisher: Any, source: Image) -> None:
         image = tensor.squeeze(0).permute(1, 2, 0).clamp(0.0, 1.0)
-        rgb = (image * 255.0).byte().cpu().numpy()
-        output = self.bridge.cv2_to_imgmsg(rgb, encoding="rgb8")
+        bgr = (image * 255.0).byte().cpu().numpy()
+        output = self.bridge.cv2_to_imgmsg(bgr, encoding="bgr8")
         output.header = source.header
         publisher.publish(output)
 

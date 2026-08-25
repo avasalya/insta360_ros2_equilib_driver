@@ -1,120 +1,346 @@
-# Insta360 ROS 2 EquiLib Driver
+# Insta360 ROS 2 Jazzy Driver with fast CUDA-Stitcher
 
-A minimal ROS 2 driver for an Insta360 camera. It contains only camera capture,
-H.264 decoding, and the CUDA/CPU PyTorch + PyEquiLib stitcher.
+ROS 2 Jazzy driver for capturing an Insta360 dual-fisheye stream, decoding
+H.264, and producing a full-resolution equirectangular image with a native
+C++/CUDA stitcher.
 
-It uses the existing workspace's `jazzy360` Pixi environment; do not create a
-separate Python environment. see **[parent repository](https://github.com/avasalya/pixi_insta360_ros2_jazzy_driver)**  for installation procedure.
+The driver is managed and built by the independent `panotrack` Pixi
+environment in the [`parent repository`](https://github.com/avasalya/pixi_insta360_ros2_jazzy_driver/tree/panotrack).
 
+## Current pipeline
 
-# Insta360 ROS2 Jazzy Driver with Pixi Environment
-
-A ROS driver for the Insta360 cameras. This driver is tested on Ubuntu 24.04 with ROS2 Jazzy on old classic RTX1080Ti. The driver has also been verified on the Insta360 X2 and X3 cameras. The following resolutions are available, all at 30 FPS.
-- 3840 x 1920
-- 2560 x 1280
-- 2304 x 1152
-- 1920 x 960
-- 1152 x 1152 (default)
-
-you can update `video_resolution` in parameter config file.
-
-```bash
- src/insta360_ros2_equilib_driver/launch/bringup.launch.xml
- ```
-
-# Installation
-
-To use this driver, you need the latest Insta360 SDK (post-April 23, 2025), which can be requested via their [official website](https://insta360.com/sdk/home). For additional instructions, refer to this [post](https://github.com/ai4ce/insta360_ros_driver/issues/10#issuecomment-3371481987).
-
-> ⚠️ **Note:** Do not manually clone or build this submodule directly. This package is managed within a `pixi` ecosystem to avoid environment conflicts. Also Please make you use the latest SDK. This package works with the SDK posted after April 23, 2025**
-
-
-## Please follow the installation guide in the **[parent repository](https://github.com/avasalya/pixi_insta360_ros2_jazzy_driver)**.
-
-```bash
-# Clone with submodules
-git clone -b equilib --recurse-submodules https://github.com/avasalya/pixi_insta360_ros2_jazzy_driver
-cd pixi_insta360_ros2_jazzy_driver
+```text
+main.cpp
+  → /dual_fisheye/image/compressed
+decoder.cpp
+  → /dual_fisheye/image
+cuda_stitcher_node.cpp + cuda_stitcher.cu
+  → /equirectangular/image
 ```
 
-**Add dependencies:**
-Then, the Insta360 libraries need to be installed as follows:
-- add the <code>camera</code> and <code>stream</code> header files inside the <code>include</code> directory
-- add the <code>libCameraSDK.so</code> library under the <code>lib</code> directory.
+Component responsibilities:
 
-**Build:** From the parent repository root, run:
-```bash
-# Setup: install dependencies and build
-pixi run -e jazzy360 setup
+- `main.cpp`: communicates with the proprietary Insta360 Camera SDK and
+  publishes compressed H.264 packets.
+- `decoder.cpp`: decodes H.264 packets into `bgr8` ROS images.
+- `cuda_stitcher_node.cpp`: owns the ROS subscription, latest-frame queue,
+  publisher, parameters, and performance statistics.
+- `cuda_stitcher.cu`: runs the precomputed bilinear dual-fisheye-to-ERP remap
+  on CUDA.
+- `equilib_stitcher.py`: retained only as a Python/Torch fallback.
+
+Both `main.cpp` and `decoder.cpp` are still required. The native CUDA
+stitcher consumes the uncompressed `/dual_fisheye/image` output from the
+decoder; it does not decode H.264 itself.
+
+## Performance
+
+Measured on an RTX 2080 Ti at 2304×1152:
+
+```text
+input=30.5 fps equirect=30.0 fps dropped=0
+cuda=2.77 ms max_cuda=4.57 ms
 ```
 
-# Setup Insta360 Camera
+The native implementation uses:
 
-**make sure the camera is set to dual-lens (360°) mode**
+- a precomputed source-coordinate map;
+- one CUDA bilinear-remap kernel;
+- a non-blocking CUDA stream;
+- pinned host output memory;
+- a latest-frame ROS queue;
+- `bgr8` end-to-end, avoiding an unnecessary BGR/RGB conversion.
 
-Additionally, **ensure the camera's USB mode is set to Android**:
-1. On the camera, swipe down the screen to the main menu
-2. Go to Settings
-3. Set USB Mode to **Android** (not Webcam or other modes)
-4. This is required for the ROS driver to properly detect and communicate with the camera (see [Issue #4](https://github.com/ai4ce/insta360_ros_driver/issues/4))
+The CUDA map is initialized before the image subscription is created so map
+construction does not cause startup frame drops.
 
-The Insta360 requires sudo privilege to be accessed via USB. To compensate for this, a udev configuration can be automatically created that will only request for sudo once. The camera can thus be setup initially via:
+## Supported hardware
+
+Tested with:
+
+- Ubuntu 24.04
+- ROS 2 Jazzy through RoboStack
+- NVIDIA RTX 2080 Ti
+- Insta360 X3
+- CUDA 12.8 from the `panotrack` Pixi environment
+
+The camera supports multiple 30 FPS modes, including:
+
+- 3840×1920
+- 2560×1280
+- 2304×1152
+- 1920×960
+- 1152×1152
+
+The launch file currently requests:
+
+```xml
+<param name="video_resolution" value="RES_1152_1152P30"/>
+<param name="lrv_video_resolution" value="RES_1440_720P30"/>
+```
+
+The decoded dual-fisheye frame and stitched ERP output are both 2304×1152.
+
+## Proprietary Insta360 SDK
+
+Obtain the latest Linux Camera SDK from the
+[Insta360 Developer portal](https://www.insta360.com/developer/home).
+
+Place the SDK content as follows:
+
+```text
+include/
+├── camera/
+└── stream/
+
+lib/
+└── libCameraSDK.so
+```
+
+These proprietary files cannot be distributed by this repository.
+
+## Camera USB setup
+
+Set the camera to:
+
+- dual-lens 360° mode;
+- USB mode: **Android**.
+
+Install the udev rule:
 
 ```bash
-cd ~/pixi_insta360_ros2_jazzy_driver/src/insta360_ros_driver
+cd src/insta360_ros2_equilib_driver
 ./setup.sh
 ```
-This creates a symlink  based on the vendor ID of Insta360 cameras. The symlink, in this case <code>/dev/insta</code> is used to grant permissions to the usb port used by the camera.
 
-**Sometimes, this does not work (e.g. you see "device /dev/insta not found" or something similar). You can try entering the commands manually, since that sometimes sees success, especially for the first time.**
-```
-echo SUBSYSTEM=='"usb"', ATTR{manufacturer}=='"Arashi Vision"', SYMLINK+='"insta"', MODE='"0777"' | sudo tee /etc/udev/rules.d/99-insta.rules
+If necessary, install the rule manually:
+
+```bash
+echo SUBSYSTEM=='"usb"', ATTR{manufacturer}=='"Arashi Vision"', SYMLINK+='"insta"', MODE='"0777"' \
+  | sudo tee /etc/udev/rules.d/99-insta.rules
+
 sudo udevadm control --reload-rules
 sudo udevadm trigger
-sudo chmod 777 /dev/insta
 ```
 
-# Usage
-The camera provides images natively in `H.264` or `H.264_cuvid` compressed image format. We have a decoder node that
-
-## CUDA EquiLib projections
-
-Set `equilib:=true` to use the PyTorch/CUDA dual-fisheye stitcher. It subscribes to
-`/dual_fisheye/image`, applies the calibration in `config/equilib.yaml`, publishes
-`/equirectangular/image`, and optionally generates `/perspective/image` with
-[EquiLib](https://github.com/haruishi43/equilib).
+Verify:
 
 ```bash
-pixi run -e jazzy360 ros2 launch insta360_ros2_equilib_driver bringup.launch.xml \
-  equilib:=true equirectangular:=true perspective:=true
+ls -l /dev/insta
 ```
 
-Set `gpu: false` in `config/equilib.yaml` to use the CPU path. The `equilib` launch
-mode replaces the legacy C++ equirectangular and perspective nodes, so only one
-projection pipeline runs at a time.
+## Independent panotrack environment
 
-
-## Included pipeline
-
-`insta360_camera` → `/dual_fisheye/image/compressed` → `decoder` →
-`/dual_fisheye/image` → `equilib_stitcher.py` → `/equirectangular/image`
-
-The perspective output `/perspective/image` is optional.
-
-## Build and run from the existing workspace
-
-Place this repository in the existing workspace root, then build it with the
-already configured Pixi environment:
+Run all commands from the parent repository root:
 
 ```bash
-pixi run -e jazzy360 colcon build --base-paths insta360_ros2_equilib_driver --symlink-install
-pixi run -e jazzy360 ros2 launch insta360_ros2_equilib_driver bringup.launch.xml \
-  equirectangular:=true perspective:=false
+cd /home/avasalya/pixi_insta360_ros2_jazzy_driver
 ```
 
-The Pixi environment must provide ROS 2 Jazzy, FFmpeg with CUDA decoding,
-OpenCV, `cv_bridge`, NumPy, PyTorch, and PyEquiLib. The existing workspace's
-`pixi.toml` already provides these dependencies.
+Install the environment:
 
-Set `gpu: false` in `config/equilib.yaml` to run the stitcher on CPU. Adjust the
-same file for the fisheye calibration and output dimensions.
+```bash
+pixi install -e panotrack
+```
+
+The `panotrack` environment contains its own ROS 2 Jazzy, C/C++ compilers,
+CMake, CUDA 12.8 NVCC/CUDART, PyTorch, GStreamer, and driver dependencies. It
+does not use the separate `.pixi/envs/jazzy360` prefix.
+
+Environment-specific build output is stored under:
+
+```text
+build/panotrack/
+install/panotrack/
+log/panotrack/
+```
+
+## Build
+
+Build the driver and native CUDA stitcher:
+
+```bash
+pixi run -e panotrack build
+```
+
+For initial setup, including recursive submodules:
+
+```bash
+pixi run -e panotrack setup
+```
+
+The build uses a clean CMake cache and installs:
+
+```text
+install/panotrack/insta360_ros2_equilib_driver/lib/insta360_ros2_equilib_driver/
+├── insta360_ros2_equilib_driver
+├── decoder
+├── cuda_stitcher
+└── equilib_stitcher.py
+```
+
+## Run
+
+The parent pipeline starts this launch file automatically:
+
+```bash
+pixi run -e panotrack start
+```
+
+Launch only the driver:
+
+```bash
+pixi run -e panotrack -- ros2 launch \
+  insta360_ros2_equilib_driver bringup.launch.xml \
+  equirectangular:=true \
+  perspective:=false \
+  viewer:=false \
+  native_cuda_stitcher:=true
+```
+
+## Launch options
+
+| Argument | Default | Purpose |
+|---|---:|---|
+| `equirectangular` | `true` | Publish `/equirectangular/image` |
+| `perspective` | `false` | Enable Python fallback perspective output |
+| `viewer` | `false` | Launch ROS `image_view` |
+| `native_cuda_stitcher` | `true` | Select the native C++/CUDA stitcher |
+| `cuda_visible_devices` | `0` | Select the visible NVIDIA GPU |
+
+The viewer is disabled by default because an additional full-resolution ROS
+subscriber increases memory traffic.
+
+## Python (Pytorch or CPU) stitcher fallback
+
+For comparison or debugging:
+
+```bash
+pixi run -e panotrack -- ros2 launch \
+  insta360_ros2_equilib_driver bringup.launch.xml \
+  equirectangular:=true \
+  perspective:=false \
+  viewer:=false \
+  native_cuda_stitcher:=false
+```
+
+The fallback uses `scripts/equilib_stitcher.py`, PyTorch, and EquiLib. It is
+not the default real-time path.
+
+## Stitcher configuration
+
+Calibration and output parameters are defined in:
+
+```text
+config/equilib.yaml
+```
+
+Parameters consumed by the native stitcher include:
+
+- `cx_offset`
+- `cy_offset`
+- `crop_size`
+- `translation`
+- `rotation_deg`
+- `out_width`
+- `out_height`
+- `fisheye_fov_deg`
+- `publish_equirectangular`
+
+Default output:
+
+```yaml
+out_width: 2304
+out_height: 1152
+fisheye_fov_deg: 195.0
+```
+
+## H.264 decoder
+
+The launch file requests:
+
+```xml
+<param name="decoder_name" value="h264_cuvid"/>
+```
+
+Verify CUDA decoder availability:
+
+```bash
+pixi run -e panotrack -- ffmpeg -hide_banner -decoders \
+  | grep -E 'h264_cuvid|cuvid'
+```
+
+If `h264_cuvid` is unavailable, `decoder.cpp` falls back to the software
+H.264 decoder. Build the optional CUDA-enabled FFmpeg in the parent repository
+with:
+
+```bash
+pixi run -e panotrack ffmpeg
+```
+
+
+## Switch GPU to CPU
+
+To switch from GPU to CPU:
+
+1. In `src/insta360_ros2_equilib_driver/launch/bringup.launch.xml`, change:
+
+```xml
+<param name="decoder_name" value="h264_cuvid"/>
+```
+
+```xml
+<param name="decoder_name" value="h264"/>
+```
+
+and
+Set `gpu: false` in `config/equilib.yaml` to use the CPU path.
+Adjust the same file for the fisheye calibration and output dimensions.
+
+
+
+## Topics
+
+| Topic | Type | Producer |
+|---|---|---|
+| `/dual_fisheye/image/compressed` | `sensor_msgs/msg/CompressedImage` | `main.cpp` |
+| `/dual_fisheye/image` | `sensor_msgs/msg/Image` (`bgr8`) | `decoder.cpp` |
+| `/equirectangular/image` | `sensor_msgs/msg/Image` (`bgr8`) | native CUDA stitcher |
+| `/perspective/image` | `sensor_msgs/msg/Image` | Python fallback only |
+| `/imu/data_raw` | `sensor_msgs/msg/Imu` | camera driver |
+
+## Source files
+
+```text
+src/
+├── main.cpp
+├── decoder.cpp
+├── cuda_stitcher_node.cpp
+└── cuda_stitcher.cu
+
+include/insta360_ros2_equilib_driver/
+└── cuda_stitcher.hpp
+
+scripts/
+└── equilib_stitcher.py
+```
+
+## Images
+
+### Dual fisheye
+
+![Dual fisheye](doc/fisheye.png)
+
+### Equirectangular
+
+![Equirectangular](doc/equirectangular.png)
+
+### Perspective
+
+![Perspective](doc/perspective.png)
+
+## Credits
+
+- [Original Insta360 ROS driver](https://github.com/ai4ce/insta360_ros_driver)
+- [EquiLib](https://github.com/haruishi43/equilib)
+
