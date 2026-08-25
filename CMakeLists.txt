@@ -56,7 +56,7 @@ ament_target_dependencies(${PROJECT_NAME}
 add_executable(decoder src/decoder.cpp)
 target_link_libraries(decoder
   CameraSDK ${OpenCV_LIBRARIES} ${AVCODEC_LIBRARIES} ${AVFORMAT_LIBRARIES}
-  ${AVUTIL_LIBRARIES} ${SWSCALE_LIBRARIES}
+  ${AVUTIL_LIBRARIES} ${SWSCALE_LIBRARIES} CUDA::nvToolsExt
 )
 ament_target_dependencies(decoder
   rclcpp camera_info_manager cv_bridge image_transport sensor_msgs std_msgs std_srvs OpenCV
@@ -67,7 +67,7 @@ add_executable(cuda_stitcher
   src/cuda_stitcher.cu
 )
 target_include_directories(cuda_stitcher PRIVATE include)
-target_link_libraries(cuda_stitcher CUDA::cudart)
+target_link_libraries(cuda_stitcher CUDA::cudart CUDA::nvToolsExt)
 target_compile_features(cuda_stitcher PRIVATE cxx_std_17)
 target_compile_options(cuda_stitcher PRIVATE
   $<$<COMPILE_LANGUAGE:CUDA>:-O3>

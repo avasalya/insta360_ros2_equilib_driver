@@ -10,6 +10,7 @@
 #include <thread>
 #include <utility>
 #include <vector>
+#include <nvtx3/nvToolsExt.h>
 
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp/qos.hpp"
@@ -18,6 +19,13 @@
 
 namespace insta360_ros2_equilib_driver
 {
+
+class NvtxScopedRange
+{
+public:
+  explicit NvtxScopedRange(const char * name) {nvtxRangePushA(name);}
+  ~NvtxScopedRange() {nvtxRangePop();}
+};
 
 class CudaStitcherNode final : public rclcpp::Node
 {
@@ -170,6 +178,7 @@ private:
 
       float cuda_ms = 0.0F;
       std::string error;
+      NvtxScopedRange profile_range("camera/cuda_stitcher");
       if (!run_cuda_stitcher(
           stitcher_, source->data.data(), source->step, cuda_ms, error))
       {
