@@ -203,7 +203,7 @@ public:
 
         ins_camera::LiveStreamParam param;
         param.video_resolution = StringToVideoResolution(video_resolution_str);
-        param.lrv_video_reslution = StringToVideoResolution(lrv_video_resolution_str);
+        param.lrv_video_resulution = StringToVideoResolution(lrv_video_resolution_str);
         param.video_bitrate = 1024 * 1024 / 2;
         param.enable_audio = false;
         param.using_lrv = false;
