@@ -129,6 +129,15 @@ Verify:
 ls -l /dev/insta
 ```
 
+Debug
+```bash
+lsusb | grep 2e1a
+
+# output: Bus 001 Device 024: ID 2e1a:0002 Arashi Vision Insta360 X3
+
+# solution: if you do not see above message, turn off the camera, remove battery, re-insert, turn on and try again.
+```
+
 ## Independent panotrack environment
 
 Run all commands from the parent repository root:
