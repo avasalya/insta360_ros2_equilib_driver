@@ -89,6 +89,30 @@ here, including
 `LiveStreamParam::lrv_video_resulution`. Copy these files from the downloaded
 SDK into the repository:
 
+
+## Create the standalone Pixi environment
+
+```bash
+git clone https://github.com/avasalya/insta360_ros2_cuda_driver.git
+cd insta360_ros2_cuda_driver
+pixi install
+```
+
+The committed `pixi.toml` contains the minimal native driver dependencies plus
+the optional Python fallback. No lockfile is committed; Pixi resolves the
+environment locally.
+
+## SDK setup
+
+```bash
+cd insta360_ros2_cuda_driver
+mkdir lib include
+```
+
+Copy `include/camera` and `include/stream` from sdk and copy to `insta360_ros2_cuda_driver/include`
+and copy `libCameraSDK.so` to `insta360_ros2_cuda_driver/lib`
+
+
 ```text
 insta360_ros2_cuda_driver/
 ├── include/
@@ -107,18 +131,6 @@ git check-ignore include/camera/camera.h \
   include/stream/stream_types.h \
   lib/libCameraSDK.so
 ```
-
-## Create the standalone Pixi environment
-
-```bash
-git clone https://github.com/avasalya/insta360_ros2_cuda_driver.git
-cd insta360_ros2_cuda_driver
-pixi install
-```
-
-The committed `pixi.toml` contains the minimal native driver dependencies plus
-the optional Python fallback. No lockfile is committed; Pixi resolves the
-environment locally.
 
 ## Camera setup
 
