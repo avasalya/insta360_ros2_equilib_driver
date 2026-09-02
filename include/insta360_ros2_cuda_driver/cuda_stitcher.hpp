@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <string>
 
-namespace insta360_ros2_equilib_driver
+namespace insta360_ros2_cuda_driver
 {
 
 struct StitchParameters
@@ -44,5 +44,5 @@ const std::uint8_t * cuda_stitcher_output(const CudaStitcher * stitcher);
 
 std::size_t cuda_stitcher_output_size(const CudaStitcher * stitcher);
 
-}  // namespace insta360_ros2_equilib_driver
+}  // namespace insta360_ros2_cuda_driver
 

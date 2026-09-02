@@ -1,4 +1,4 @@
-#include "insta360_ros2_equilib_driver/cuda_stitcher.hpp"
+#include "insta360_ros2_cuda_driver/cuda_stitcher.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -17,7 +17,7 @@
 #include "sensor_msgs/image_encodings.hpp"
 #include "sensor_msgs/msg/image.hpp"
 
-namespace insta360_ros2_equilib_driver
+namespace insta360_ros2_cuda_driver
 {
 
 class NvtxScopedRange
@@ -279,13 +279,13 @@ private:
   std::uint64_t last_dropped_{0};
 };
 
-}  // namespace insta360_ros2_equilib_driver
+}  // namespace insta360_ros2_cuda_driver
 
 int main(int argc, char ** argv)
 {
   rclcpp::init(argc, argv);
   auto node =
-    std::make_shared<insta360_ros2_equilib_driver::CudaStitcherNode>();
+    std::make_shared<insta360_ros2_cuda_driver::CudaStitcherNode>();
   rclcpp::spin(node);
   rclcpp::shutdown();
   return 0;

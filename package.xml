@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <package format="2">
-  <name>insta360_ros2_equilib_driver</name>
+  <name>insta360_ros2_cuda_driver</name>
   <version>0.1.0</version>
   <description>Insta360 camera capture, H.264 decoding, and PyTorch/PyEquiLib stitching for ROS 2.</description>
 

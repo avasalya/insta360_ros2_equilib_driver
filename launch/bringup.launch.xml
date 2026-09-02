@@ -5,7 +5,7 @@
   <arg name="viewer" default="false"/>
   <arg name="native_cuda_stitcher" default="true"/>
   <arg name="cuda_visible_devices" default="0"/>
-  <arg name="equilib_config" default="$(find-pkg-share insta360_ros2_equilib_driver)/config/equilib.yaml"/>
+  <arg name="equilib_config" default="$(find-pkg-share insta360_ros2_cuda_driver)/config/equilib.yaml"/>
 
   <set_env name="CUDA_VISIBLE_DEVICES" value="$(var cuda_visible_devices)"/>
 
@@ -17,13 +17,13 @@
   <let if="$(var equirectangular)" name="stitcher_enabled" value="true"/>
   <let if="$(var perspective)" name="stitcher_enabled" value="true"/>
 
-  <node pkg="insta360_ros2_equilib_driver" exec="insta360_ros2_equilib_driver"
-        name="insta360_ros2_equilib_driver" output="screen">
+  <node pkg="insta360_ros2_cuda_driver" exec="insta360_ros2_cuda_driver"
+        name="insta360_ros2_cuda_driver" output="screen">
     <param name="video_resolution" value="RES_1152_1152P30"/>
     <param name="lrv_video_resolution" value="RES_1440_720P30"/>
   </node>
 
-  <node pkg="insta360_ros2_equilib_driver" exec="decoder"
+  <node pkg="insta360_ros2_cuda_driver" exec="decoder"
         name="image_decoder" output="log">
     <param name="compressed_topic" value="/dual_fisheye/image/compressed"/>
     <param name="uncompressed_topic" value="/dual_fisheye/image"/>
@@ -32,7 +32,7 @@
     <param name="decoder_name" value="h264_cuvid"/>
   </node>
 
-  <node pkg="insta360_ros2_equilib_driver" exec="equilib_stitcher.py"
+  <node pkg="insta360_ros2_cuda_driver" exec="equilib_stitcher.py"
         name="equilib_stitcher" output="screen"
         unless="$(var native_cuda_stitcher)">
     <param from="$(var equilib_config)"/>
@@ -40,7 +40,7 @@
     <param name="publish_perspective" value="$(var perspective)"/>
   </node>
 
-  <node pkg="insta360_ros2_equilib_driver" exec="cuda_stitcher"
+  <node pkg="insta360_ros2_cuda_driver" exec="cuda_stitcher"
         name="equilib_stitcher" output="screen"
         if="$(var native_cuda_stitcher)">
     <param from="$(var equilib_config)"/>

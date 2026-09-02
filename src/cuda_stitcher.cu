@@ -1,4 +1,4 @@
-#include "insta360_ros2_equilib_driver/cuda_stitcher.hpp"
+#include "insta360_ros2_cuda_driver/cuda_stitcher.hpp"
 
 #include <cuda_runtime.h>
 
@@ -10,7 +10,7 @@
 #include <string>
 #include <vector>
 
-namespace insta360_ros2_equilib_driver
+namespace insta360_ros2_cuda_driver
 {
 
 namespace
@@ -395,5 +395,5 @@ std::size_t cuda_stitcher_output_size(const CudaStitcher * stitcher)
   return stitcher == nullptr ? 0U : stitcher->output_bytes;
 }
 
-}  // namespace insta360_ros2_equilib_driver
+}  // namespace insta360_ros2_cuda_driver
 

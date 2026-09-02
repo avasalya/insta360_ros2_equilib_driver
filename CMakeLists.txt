@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.8)
-project(insta360_ros2_equilib_driver)
+project(insta360_ros2_cuda_driver)
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
   add_compile_options(
