@@ -1,5 +1,6 @@
 #include "insta360_ros2_cuda_driver/cuda_stitcher.hpp"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -52,9 +53,6 @@ public:
 
     auto qos = rclcpp::SensorDataQoS().keep_last(1);
     publisher_ = create_publisher<sensor_msgs::msg::Image>("/equirectangular/image", qos);
-    const auto configured_source_width = get_parameter("source_width").as_int();
-    const auto configured_source_height = get_parameter("source_height").as_int();
-    initialize_stitcher(configured_source_width, configured_source_height);
     subscription_ = create_subscription<sensor_msgs::msg::Image>(
       "/dual_fisheye/image",
       qos,
@@ -76,9 +74,8 @@ public:
 
     RCLCPP_INFO(
       get_logger(),
-      "Native CUDA stitcher ready: output=%dx%d topic=/equirectangular/image",
-      output_width_,
-      output_height_);
+      "Native CUDA stitcher ready: output=%s topic=/equirectangular/image",
+      output_width_ > 0 && output_height_ > 0 ? "configured" : "automatic");
   }
 
   ~CudaStitcherNode() override
@@ -105,9 +102,11 @@ private:
     StitchParameters parameters{};
     parameters.source_width = static_cast<int>(source_width);
     parameters.source_height = static_cast<int>(source_height);
-    parameters.output_width = output_width_;
-    parameters.output_height = output_height_;
-    parameters.crop_size = get_parameter("crop_size").as_int();
+    const int lens_size = std::min(parameters.source_height, parameters.source_width / 2);
+    const int configured_crop_size = get_parameter("crop_size").as_int();
+    parameters.crop_size = configured_crop_size > 0 ? configured_crop_size : lens_size;
+    parameters.output_width = output_width_ > 0 ? output_width_ : parameters.crop_size * 2;
+    parameters.output_height = output_height_ > 0 ? output_height_ : parameters.crop_size;
     parameters.cx_offset = static_cast<float>(get_parameter("cx_offset").as_double());
     parameters.cy_offset = static_cast<float>(get_parameter("cy_offset").as_double());
     parameters.translation_x = static_cast<float>(translation[0]);
@@ -129,13 +128,15 @@ private:
 
     source_width_ = source_width;
     source_height_ = source_height;
+    active_output_width_ = parameters.output_width;
+    active_output_height_ = parameters.output_height;
     RCLCPP_INFO(
       get_logger(),
       "CUDA map initialized: %ux%u -> %dx%d on device %d",
       source_width,
       source_height,
-      output_width_,
-      output_height_,
+      active_output_width_,
+      active_output_height_,
       parameters.cuda_device);
     return true;
   }
@@ -190,11 +191,11 @@ private:
 
       auto output = std::make_unique<sensor_msgs::msg::Image>();
       output->header = source->header;
-      output->height = static_cast<std::uint32_t>(output_height_);
-      output->width = static_cast<std::uint32_t>(output_width_);
+      output->height = static_cast<std::uint32_t>(active_output_height_);
+      output->width = static_cast<std::uint32_t>(active_output_width_);
       output->encoding = sensor_msgs::image_encodings::BGR8;
       output->is_bigendian = false;
-      output->step = static_cast<std::uint32_t>(output_width_ * 3);
+      output->step = static_cast<std::uint32_t>(active_output_width_ * 3);
       const auto * output_data = cuda_stitcher_output(stitcher_);
       const auto output_size = cuda_stitcher_output_size(stitcher_);
       output->data.resize(output_size);
@@ -266,6 +267,8 @@ private:
   std::uint32_t source_height_{0};
   int output_width_{2304};
   int output_height_{1152};
+  int active_output_width_{0};
+  int active_output_height_{0};
   bool publish_enabled_{true};
 
   std::atomic<std::uint64_t> frames_received_{0};

@@ -5,6 +5,7 @@
   <arg name="viewer" default="false"/>
   <arg name="native_cuda_stitcher" default="true"/>
   <arg name="cuda_visible_devices" default="0"/>
+  <arg name="video_resolution" default="RES_1152_1152P30"/>
   <arg name="equilib_config" default="$(find-pkg-share insta360_ros2_cuda_driver)/config/equilib.yaml"/>
 
   <set_env name="CUDA_VISIBLE_DEVICES" value="$(var cuda_visible_devices)"/>
@@ -19,7 +20,7 @@
 
   <node pkg="insta360_ros2_cuda_driver" exec="insta360_ros2_cuda_driver"
         name="insta360_ros2_cuda_driver" output="screen">
-    <param name="video_resolution" value="RES_1152_1152P30"/>
+    <param name="video_resolution" value="$(var video_resolution)"/>
     <param name="lrv_video_resolution" value="RES_1440_720P30"/>
   </node>
 

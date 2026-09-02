@@ -160,16 +160,21 @@ class EquiLibStitcher(Node):
         if source_width % 2:
             raise ValueError("dual-fisheye image width must be even")
         lens_width = source_width // 2
-        crop_size = int(params["crop_size"])
-        if crop_size <= 0 or crop_size > min(source_height, lens_width):
+        lens_size = min(source_height, lens_width)
+        configured_crop_size = int(params["crop_size"])
+        crop_size = configured_crop_size if configured_crop_size > 0 else lens_size
+        if crop_size > lens_size:
             raise ValueError(
                 f"crop_size={crop_size} must be within the {lens_width}x{source_height} lens image"
             )
 
         y_offset = (source_height - crop_size) // 2
         x_offset = (lens_width - crop_size) // 2
-        output_height = int(params["out_height"])
-        output_width = int(params["out_width"])
+        configured_output_height = int(params["out_height"])
+        configured_output_width = int(params["out_width"])
+        output_height = configured_output_height if configured_output_height > 0 else crop_size
+        output_width = configured_output_width if configured_output_width > 0 else crop_size * 2
+        self.output_shape = (output_height, output_width)
 
         # Create output coordinate meshgrid directly on GPU
         y, x = torch.meshgrid(
@@ -276,8 +281,8 @@ class EquiLibStitcher(Node):
     def _ensure_equilib_transforms(self, params: dict[str, Any]) -> None:
         """Create cached EquiLib transforms when their configuration changes."""
         key = (
-            int(params["out_height"]),
-            int(params["out_width"]),
+            self.output_shape[0],
+            self.output_shape[1],
             int(params["perspective_height"]),
             int(params["perspective_width"]),
             float(params["perspective_fov_x"]),

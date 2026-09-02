@@ -40,6 +40,8 @@ This project extends the original AI4CE ROS driver with:
 
 - a native C++/CUDA dual-fisheye stitcher for real-time equirectangular output;
 - configurable NVIDIA NVDEC hardware decoding and preserved source timestamps;
+- selectable Camera SDK streaming resolutions up to `RES_3840_1920P30`;
+- automatic stitch geometry derived from the decoded frame dimensions;
 - automatic camera reconnection and stalled-stream recovery;
 - frame-rate, latency, dropped-frame, and NVTX performance diagnostics;
 - a reproducible standalone ROS 2 Jazzy environment managed with Pixi.
@@ -245,10 +247,31 @@ package, so the standalone helper does not start it.
 | `viewer` | `false` | Open `image_view` on the selected output |
 | `native_cuda_stitcher` | `true` | Use the native C++/CUDA stitcher |
 | `cuda_visible_devices` | `0` | Select the visible NVIDIA GPU |
+| `video_resolution` | `RES_3840_1920P30` | Select the Camera SDK streaming resolution |
 | `equilib_config` | package config | Override the stitcher YAML path |
 
 The viewer selects `/equirectangular/image`, `/perspective/image`, or the raw
 `/dual_fisheye/image`, according to the enabled outputs.
+
+The driver accepts these Camera SDK resolution names:
+
+- `RES_1152_1152P30` (default)
+- `RES_1440_720P30`
+- `RES_1920_960P30`
+- `RES_2560_1280P30`
+- `RES_2880_2880P30`
+- `RES_3840_1920P30` (maximum supported by this driver)
+
+Select a resolution at launch time:
+
+```bash
+ros2 launch insta360_ros2_cuda_driver bringup.launch.xml \
+  video_resolution:=RES_2560_1280P30
+```
+
+Actual mode availability still depends on the connected camera and Camera SDK.
+The `CUDA map initialized: <input> -> <output>` log reports the decoded frame
+dimensions actually received by the stitcher.
 
 ## Stitcher configuration
 
@@ -257,8 +280,11 @@ stitcher consumes `cx_offset`, `cy_offset`, `crop_size`, `translation`,
 `rotation_deg`, `out_width`, `out_height`, `fisheye_fov_deg`, and
 `publish_equirectangular`.
 
-Defaults produce a 2304 x 1152 image with a 195-degree fisheye field of view.
-Calibrate these values for the individual camera before relying on geometric
+By default, `crop_size`, `out_width`, and `out_height` are zero, which enables
+automatic sizing from the decoded dual-fisheye frame. For a standard side-by-side
+frame, the stitcher uses the largest square lens crop and produces a native-size
+2:1 panorama. Positive values remain available as explicit overrides. Calibrate
+the remaining values for the individual camera before relying on geometric
 accuracy.
 
 ## Python fallback

@@ -3,7 +3,8 @@ equilib_stitcher:
     # Dual-fisheye calibration. These values match equirectangular.yaml.
     cx_offset: 0.0
     cy_offset: 0.0
-    crop_size: 1152
+    # Zero derives the largest square lens crop from each decoded frame.
+    crop_size: 0
     translation: [0.0, 0.0, 0.0]
     rotation_deg: [0.0, 0.0, 0.0]
 
@@ -11,8 +12,9 @@ equilib_stitcher:
     gpu: true
 
     # Equirectangular panorama output.
-    out_width: 2304
-    out_height: 1152
+    # Zero preserves a 2:1 panorama at the decoded frame's native resolution.
+    out_width: 0
+    out_height: 0
     equi_roll_deg: 0.0
     equi_pitch_deg: 0.0
     equi_yaw_deg: 0.0
