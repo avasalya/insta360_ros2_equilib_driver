@@ -1,7 +1,7 @@
 [workspace]
 authors = ["Ashesh Vasalya <asheshvasalya@gmail.com>"]
 name = "insta360_ros2_cuda_driver"
-version = "0.1.0"
+version = "1.0.0"
 channels = ["https://prefix.dev/robostack-jazzy", "conda-forge"]
 platforms = [{ platform = "linux-64", cuda = "12" }]
 conda-pypi-map = false
