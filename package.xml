@@ -2,17 +2,20 @@
 <package format="2">
   <name>insta360_ros2_cuda_driver</name>
   <version>0.1.0</version>
-  <description>Insta360 camera capture, H.264 decoding, and PyTorch/PyEquiLib stitching for ROS 2.</description>
+  <description>Insta360 camera capture, H.264 decoding, and native CUDA stitching for ROS 2.</description>
 
   <maintainer email="asheshvasalya@gmail.com">Ashesh Vasalya</maintainer>
+  <license>MIT</license>
   <license>Apache-2.0</license>
+
+  <url type="repository">https://github.com/avasalya/insta360_ros2_cuda_driver</url>
+  <url type="bugtracker">https://github.com/avasalya/insta360_ros2_cuda_driver/issues</url>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
   <buildtool_depend>ament_cmake_python</buildtool_depend>
 
   <depend>camera_info_manager</depend>
   <depend>cv_bridge</depend>
-  <depend>geometry_msgs</depend>
   <depend>image_transport</depend>
   <depend>rcl_interfaces</depend>
   <depend>rclcpp</depend>
@@ -20,7 +23,6 @@
   <depend>sensor_msgs</depend>
   <depend>std_msgs</depend>
   <depend>std_srvs</depend>
-  <depend>tf2_geometry_msgs</depend>
 
   <exec_depend>image_view</exec_depend>
 

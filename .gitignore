@@ -1,14 +1,15 @@
-build/
-install/
-log/
+/build/
+/install/
+/log/
 __pycache__/
 *.py[cod]
+/pixi.lock
 
 bag/*
 image_capture/*
-lib/*
-include/camera/*
-include/stream/*
+/lib/
+/include/camera/
+/include/stream/
 .vscode
 *.pyc
 

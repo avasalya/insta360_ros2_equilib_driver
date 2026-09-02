@@ -15,6 +15,10 @@ endif()
 enable_language(CUDA)
 find_package(CUDAToolkit REQUIRED)
 
+if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+  set(CMAKE_CUDA_ARCHITECTURES 75 CACHE STRING "CUDA architectures to build")
+endif()
+
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(camera_info_manager REQUIRED)
@@ -42,11 +46,22 @@ include_directories(
   ${AVUTIL_INCLUDE_DIRS}
   ${SWSCALE_INCLUDE_DIRS}
 )
-link_directories(${PROJECT_SOURCE_DIR}/lib)
+find_library(CAMERA_SDK_LIBRARY
+  NAMES CameraSDK
+  PATHS "${PROJECT_SOURCE_DIR}/lib"
+  NO_DEFAULT_PATH
+)
+if(NOT CAMERA_SDK_LIBRARY)
+  message(FATAL_ERROR
+    "Insta360 Camera SDK not found. Copy libCameraSDK.so to "
+    "${PROJECT_SOURCE_DIR}/lib after downloading the Linux SDK from "
+    "https://www.insta360.com/developer/home"
+  )
+endif()
 
 add_executable(${PROJECT_NAME} src/main.cpp)
 target_link_libraries(${PROJECT_NAME}
-  CameraSDK ${OpenCV_LIBRARIES} ${AVCODEC_LIBRARIES} ${AVFORMAT_LIBRARIES}
+  ${CAMERA_SDK_LIBRARY} ${OpenCV_LIBRARIES} ${AVCODEC_LIBRARIES} ${AVFORMAT_LIBRARIES}
   ${AVUTIL_LIBRARIES} ${SWSCALE_LIBRARIES}
 )
 ament_target_dependencies(${PROJECT_NAME}
@@ -55,7 +70,7 @@ ament_target_dependencies(${PROJECT_NAME}
 
 add_executable(decoder src/decoder.cpp)
 target_link_libraries(decoder
-  CameraSDK ${OpenCV_LIBRARIES} ${AVCODEC_LIBRARIES} ${AVFORMAT_LIBRARIES}
+  ${OpenCV_LIBRARIES} ${AVCODEC_LIBRARIES} ${AVFORMAT_LIBRARIES}
   ${AVUTIL_LIBRARIES} ${SWSCALE_LIBRARIES} CUDA::nvToolsExt
 )
 ament_target_dependencies(decoder
@@ -74,20 +89,22 @@ target_compile_options(cuda_stitcher PRIVATE
   $<$<COMPILE_LANGUAGE:CUDA>:--use_fast_math>
 )
 set_target_properties(cuda_stitcher PROPERTIES
-  CUDA_ARCHITECTURES 75
   CUDA_RUNTIME_LIBRARY Shared
   CUDA_STANDARD 17
   CUDA_STANDARD_REQUIRED ON
 )
 ament_target_dependencies(cuda_stitcher rclcpp sensor_msgs)
 
+set_target_properties(${PROJECT_NAME} PROPERTIES INSTALL_RPATH "$ORIGIN")
+
 install(TARGETS ${PROJECT_NAME} decoder cuda_stitcher DESTINATION lib/${PROJECT_NAME})
+install(FILES "${CAMERA_SDK_LIBRARY}" DESTINATION lib/${PROJECT_NAME})
 
 # Python modules
 ament_python_install_package(${PROJECT_NAME})
 install(PROGRAMS scripts/equilib_stitcher.py DESTINATION lib/${PROJECT_NAME})
 
-install(DIRECTORY config launch lib DESTINATION share/${PROJECT_NAME})
+install(DIRECTORY config launch DESTINATION share/${PROJECT_NAME})
 
 
 ament_package()

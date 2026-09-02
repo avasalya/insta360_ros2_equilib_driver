@@ -1,3 +1,7 @@
+// Derived from ai4ce/insta360_ros_driver and substantially modified for
+// configurable streaming, reconnect recovery, and runtime diagnostics.
+// SPDX-License-Identifier: Apache-2.0
+
 #include <iostream>
 #include <thread>
 #include <string>

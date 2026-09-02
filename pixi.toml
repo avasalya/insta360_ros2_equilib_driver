@@ -1,0 +1,38 @@
+[workspace]
+authors = ["Ashesh Vasalya <asheshvasalya@gmail.com>"]
+name = "insta360_ros2_cuda_driver"
+version = "0.1.0"
+channels = ["https://prefix.dev/robostack-jazzy", "conda-forge"]
+platforms = [{ platform = "linux-64", cuda = "12" }]
+conda-pypi-map = false
+
+[dependencies]
+python = "3.12.*"
+compilers = "*"
+cmake = "3.31.*"
+pkg-config = "*"
+make = "*"
+colcon-common-extensions = "*"
+ros-jazzy-ros-base = "*"
+ros-jazzy-rmw-cyclonedds-cpp = "*"
+ros-jazzy-camera-info-manager = "*"
+ros-jazzy-cv-bridge = "*"
+ros-jazzy-image-transport = "*"
+ros-jazzy-sensor-msgs = "*"
+ros-jazzy-std-msgs = "*"
+ros-jazzy-std-srvs = "*"
+ros-jazzy-image-view = "*"
+ffmpeg = "*"
+cuda-nvcc = "12.8.*"
+cuda-cudart-dev = "12.8.*"
+cuda-nvtx-dev = "12.8.*"
+
+[pypi-dependencies]
+numpy = "*"
+pyequilib = ">=0.6.0"
+torch = { version = "~=2.8.0", index = "https://download.pytorch.org/whl/cu128" }
+
+[tasks]
+build = "colcon build --packages-select insta360_ros2_cuda_driver --cmake-clean-cache --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -Wno-dev --symlink-install"
+launch = "bash -lc 'source install/setup.bash && ros2 launch insta360_ros2_cuda_driver bringup.launch.xml equirectangular:=true perspective:=false viewer:=true native_cuda_stitcher:=true'"
+launch-headless = "bash -lc 'source install/setup.bash && ros2 launch insta360_ros2_cuda_driver bringup.launch.xml equirectangular:=true perspective:=false viewer:=false native_cuda_stitcher:=true'"

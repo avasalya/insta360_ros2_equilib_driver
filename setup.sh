@@ -3,19 +3,19 @@
 #For WSL, uncomment if unnecessary
 # sudo usbip attach -r 127.0.0.1 -b 4-1
 
-#Add permissions for USB port
+# Add a restricted udev rule for the camera.
 # udevadm info --name /dev/bus/usb/003/026 --attribute-walk
-echo SUBSYSTEM=='"usb"', ATTR{idVendor}=='"2e1a"', SYMLINK+='"insta"', MODE='"0777"' | sudo tee /etc/udev/rules.d/99-insta.rules
+echo SUBSYSTEM=='"usb"', ATTR{idVendor}=='"2e1a"', SYMLINK+='"insta"', GROUP='"plugdev"', MODE='"0660"' | sudo tee /etc/udev/rules.d/99-insta.rules
 #Reload and trigger udev rules
 sudo udevadm control --reload-rules
 sudo udevadm trigger
 
-#Grant permission for camera port
 # Wait for the symlink to be created
 for i in {1..5}; do
     if [ -e /dev/insta ]; then
-        sudo chmod 777 /dev/insta
-        echo "Successfully set permissions for /dev/insta"
+        echo "Camera is available at /dev/insta for members of the plugdev group."
+        echo "If access is denied, run: sudo usermod -aG plugdev $USER"
+        echo "Then log out and back in."
         break
     else
         echo "Waiting for /dev/insta to be created... (attempt $i/5)"

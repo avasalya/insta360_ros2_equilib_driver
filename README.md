@@ -6,6 +6,10 @@ image on an NVIDIA GPU.
 
 This repository builds and runs on its own.
 
+> [!IMPORTANT]
+> This is an independent community project. It is not affiliated with or
+> endorsed by Insta360. The proprietary Insta360 Camera SDK is not included.
+
 ## Pipeline
 
 ```text
@@ -30,6 +34,19 @@ Installed executables:
 The decoder is required with the native stitcher: the stitcher consumes
 decoded images, not H.264 packets.
 
+## Improvements over the original driver
+
+This project extends the original AI4CE ROS driver with:
+
+- a native C++/CUDA dual-fisheye stitcher for real-time equirectangular output;
+- configurable NVIDIA NVDEC hardware decoding and preserved source timestamps;
+- automatic camera reconnection and stalled-stream recovery;
+- frame-rate, latency, dropped-frame, and NVTX performance diagnostics;
+- a reproducible standalone ROS 2 Jazzy environment managed with Pixi.
+
+The original camera capture and decoder foundations remain credited and
+Apache-2.0 licensed; the new independent components are MIT licensed.
+
 ## Tested configuration
 
 - Ubuntu 24.04 and ROS 2 Jazzy from RoboStack
@@ -37,8 +54,8 @@ decoded images, not H.264 packets.
 - CUDA 12.8
 - 2304 x 1152 input and equirectangular output at 30 FPS
 
-CMake currently targets CUDA compute capability 7.5. For another GPU, change
-`CUDA_ARCHITECTURES` in `CMakeLists.txt` to its supported compute capability.
+The default CUDA target is compute capability 7.5. Override it at build time
+with `-DCMAKE_CUDA_ARCHITECTURES=<value>` for another GPU.
 
 ## Prerequisites
 
@@ -51,9 +68,26 @@ nvidia-smi
 
 ### Proprietary Insta360 Camera SDK
 
-Download the Linux Camera SDK from the
-[Insta360 Developer portal](https://www.insta360.com/developer/home). It cannot
-be distributed with this repository. Copy its files into the package root:
+Create an Insta360 developer account and download the current **Camera SDK for
+Linux** from the
+[Insta360 Developer portal](https://www.insta360.com/developer/home). Accept
+and follow Insta360's SDK license. The headers and binary are proprietary and
+are intentionally excluded from Git.
+
+This driver was validated with the Linux SDK downloaded on **2026-08-28**. The
+downloaded bundle and library do not expose a reliable Camera SDK release
+number. The exact tested `libCameraSDK.so` is identified by:
+
+```text
+SHA-256: d55091f120fa04632decd2230c1ebf5e0c87037d7ec01ffae089eb4a9236b2ad
+ELF build ID: a874e4ec041cc097d126dc539572e908194b8d2f
+```
+
+Use an SDK published after 2025-04-23; older SDKs are not compatible with the
+upstream X3 driver API. A newer SDK is suitable if it retains the API used
+here, including
+`LiveStreamParam::lrv_video_resulution`. Copy these files from the downloaded
+SDK into the repository:
 
 ```text
 insta360_ros2_cuda_driver/
@@ -66,32 +100,25 @@ insta360_ros2_cuda_driver/
     └── libCameraSDK.so
 ```
 
-## Create a standalone Pixi workspace
+Never force-add these files. Verify that Git ignores them:
 
 ```bash
-mkdir -p pixi_insta360_ws/src
-cd pixi_insta360_ws/src
-git clone https://github.com/avasalya/insta360_ros2_cuda_driver.git
-cd ..
-
-pixi init --channel https://prefix.dev/robostack-jazzy --channel conda-forge
-pixi add \
-  python=3.12 compilers cmake=3.31 pkg-config make ninja \
-  colcon-common-extensions \
-  ros-jazzy-ros-base \
-  ros-jazzy-camera-info-manager \
-  ros-jazzy-cv-bridge \
-  ros-jazzy-image-transport \
-  ros-jazzy-sensor-msgs \
-  ros-jazzy-std-msgs \
-  ros-jazzy-std-srvs \
-  ros-jazzy-image-view \
-  ros-jazzy-rmw-cyclonedds-cpp \
-  cuda-nvcc=12.8 cuda-cudart-dev=12.8 cuda-nvtx-dev=12.8 \
-  ffmpeg
+git check-ignore include/camera/camera.h \
+  include/stream/stream_types.h \
+  lib/libCameraSDK.so
 ```
 
-Run the remaining commands from `pixi_insta360_ws`, not its `src` directory.
+## Create the standalone Pixi environment
+
+```bash
+git clone https://github.com/avasalya/insta360_ros2_cuda_driver.git
+cd insta360_ros2_cuda_driver
+pixi install
+```
+
+The committed `pixi.toml` contains the minimal native driver dependencies plus
+the optional Python fallback. No lockfile is committed; Pixi resolves the
+environment locally.
 
 ## Camera setup
 
@@ -99,10 +126,11 @@ Set the camera to dual-lens 360 mode and USB mode **Android**. Connect it and
 install the udev rule:
 
 ```bash
-cd src/insta360_ros2_cuda_driver
 ./setup.sh
-cd ../..
 ```
+
+The rule grants camera access to the `plugdev` group. If needed, run
+`sudo usermod -aG plugdev "$USER"`, then log out and back in.
 
 Verify the device:
 
@@ -118,15 +146,21 @@ Android USB mode, and reconnect it.
 ## Build
 
 ```bash
+pixi run build
+```
+
+For a GPU other than the default compute capability 7.5, run the underlying
+command with the appropriate architecture:
+
+```bash
 pixi run colcon build \
   --packages-select insta360_ros2_cuda_driver \
   --cmake-clean-cache \
-  --cmake-args \
-    -DCMAKE_BUILD_TYPE=Release \
-    -DBUILD_TESTING=OFF \
-    -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+  --cmake-args -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_ARCHITECTURES=89 \
   --symlink-install
 ```
+
+The example `89` targets an RTX 4070.
 
 If this workspace previously contained the package under its old name, start
 a fresh terminal and remove only the stale package output:
@@ -144,18 +178,17 @@ in `CMAKE_PREFIX_PATH` and `PYTHONPATH`.
 Launch the complete native CUDA pipeline:
 
 ```bash
-pixi run bash -lc '
-  source install/setup.bash
-  ros2 launch insta360_ros2_cuda_driver bringup.launch.xml \
-    equirectangular:=true \
-    perspective:=false \
-    viewer:=true \
-    native_cuda_stitcher:=true
-'
+pixi run launch
 ```
 
-Set `viewer:=false` for headless operation. Add
-`cuda_visible_devices:=1` to select another visible NVIDIA GPU.
+For headless operation:
+
+```bash
+pixi run launch-headless
+```
+
+For other launch combinations, source `install/setup.bash` inside the Pixi
+environment and pass the arguments listed below.
 
 ### Optional `run360` shell function
 
@@ -181,7 +214,7 @@ run360()
 }
 ```
 
-Run it from `pixi_insta360_ws`:
+Run it from the repository root:
 
 ```bash
 run360                 # viewer and native CUDA enabled
@@ -216,19 +249,11 @@ Defaults produce a 2304 x 1152 image with a 195-degree fisheye field of view.
 Calibrate these values for the individual camera before relying on geometric
 accuracy.
 
-## Optional Python fallback
+## Python fallback
 
-The default native stitcher does not need PyTorch or PyEquilib. For the
-fallback, install them:
-
-```bash
-pixi add --pypi pyequilib
-pixi add --pypi "torch~=2.8.0" \
-  --index-url https://download.pytorch.org/whl/cu128
-```
-
-Then launch with `native_cuda_stitcher:=false`. Perspective output exists only
-in this fallback path.
+PyTorch and PyEquilib are already included in `pixi.toml`. Launch with
+`native_cuda_stitcher:=false` to use them. Perspective output exists only in
+this fallback path.
 
 ## Topics
 
@@ -333,5 +358,14 @@ ROS queue, and `bgr8` end to end.
 
 ## Credits
 
-- [Original Insta360 ROS driver](https://github.com/ai4ce/insta360_ros_driver)
-- [EquiLib](https://github.com/haruishi43/equilib)
+- Camera capture and decoder nodes are based on the Apache-2.0-licensed
+  [AI4CE Insta360 ROS driver](https://github.com/ai4ce/insta360_ros_driver) and
+  have been substantially modified for this project.
+- The optional Python fallback uses [EquiLib](https://github.com/haruishi43/equilib).
+
+## License
+
+Independent original work is available under the [MIT License](LICENSE).
+The derived camera and decoder nodes remain Apache-2.0; see
+[third-party notices](THIRD_PARTY_NOTICES.md). The proprietary Insta360 Camera
+SDK is separately licensed and is not included.
