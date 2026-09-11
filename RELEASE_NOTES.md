@@ -1,3 +1,41 @@
+# v1.1.0 — 2026-09-11
+
+Real-time standalone streaming and reproducible ffmpeg-CUDA dependency update.
+
+## Highlights
+
+- Added the named Pixi environment `insta360` and updated installation, build,
+  and launch commands to select it explicitly.
+- Added CycloneDDS shared-memory transport backed by RouDi so decoded and
+  equirectangular image streams can sustain the camera's 30 FPS output.
+- Added automatic RouDi startup, readiness checking, cleanup, and standalone
+  shared-memory pool configuration.
+- Added automatic native GPU architecture detection for Pixi builds while
+  retaining compute capability 7.5 as the CMake-only fallback.
+- Pinned FFmpeg and nv-codec-headers to tested commits and made their build
+  tasks stop immediately on errors.
+- Documented NVDEC verification, expected camera/stitcher statistics, and the
+  portable `run360` helper.
+
+## Runtime change
+
+Use the Pixi launch tasks so CycloneDDS and RouDi are configured before ROS:
+
+```bash
+pixi install -e insta360
+pixi run -e insta360 build
+pixi run -e insta360 launch
+pixi run -e insta360 launch-headless
+```
+
+Launching ROS directly without the bundled environment and RouDi wrapper can
+reduce throughput for the large `bgr8` image topics.
+
+## Pinned sources
+
+- FFmpeg: `3a165c77dce7fac8c54f9f9aaab5447590433748`
+- nv-codec-headers: `eddcea9e27f6b772057c9b3f87de2cc1737faffc`
+
 # v1.0.0 — 2026-09-02
 
 First stable release of the standalone **Insta360 ROS 2 CUDA Driver**.

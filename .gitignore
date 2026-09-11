@@ -8,11 +8,12 @@ __pycache__/
 bag/*
 image_capture/*
 /lib/
+/external/
 /include/camera/
 /include/stream/
 .vscode
 *.pyc
-
+*.code-workspace
 !bag/raw/.gitkeep
 !bag/compressed/.gitkeep
 !bag/undistorted/.gitkeep
